@@ -19,6 +19,6 @@ module yousui::xui {
         let (treasury_cap, metadata) = coin::create_currency<XUI>(witness, DECIMAL, SYMBOL, NAME, DESCRIPTION, option::some(url::new_unsafe_from_bytes(ICON_URL)), ctx);
         coin::mint_and_transfer(&mut treasury_cap, TOTAL_SUPPLY, tx_context::sender(ctx), ctx);
         transfer::public_freeze_object(metadata);
-        transfer::public_freeze_object(treasury_cap);
+        transfer::public_transfer(treasury_cap, tx_context::sender(ctx))
     }
 }
