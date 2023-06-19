@@ -1,0 +1,3 @@
+[submodule "free_minting_event"]
+	path = free_minting_event
+	url = https://github.com/splabs-info/yousui_free_minting_sc.git
