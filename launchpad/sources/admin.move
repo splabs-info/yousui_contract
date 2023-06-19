@@ -181,7 +181,8 @@ module yousui::admin {
         tge_time: u64,
         tge_unlock_percent: u64,
         number_of_cliff_months: u64,
-        number_of_linear_month: u64,
+        number_of_month: u64,
+        number_of_linear: u64,
         ctx: &mut TxContext
     ) {
         check_is_setter(admin_storage, ctx);
@@ -195,7 +196,8 @@ module yousui::admin {
                 tge_time,
                 tge_unlock_percent,
                 number_of_cliff_months,
-                number_of_linear_month,
+                number_of_month,
+                number_of_linear,
                 launchpad_presale::get_token_type(b_round),
                 ctx,
             );
@@ -212,7 +214,8 @@ module yousui::admin {
                 tge_time,
                 tge_unlock_percent,
                 number_of_cliff_months,
-                number_of_linear_month,
+                number_of_month,
+                number_of_linear,
                 launchpad_ido::get_token_type(b_round),
                 ctx,
             );

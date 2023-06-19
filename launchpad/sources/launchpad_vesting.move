@@ -43,7 +43,8 @@ module yousui::launchpad_vesting {
         tge_time: u64,
         tge_unlock_percent: u64,
         number_of_cliff_months: u64,
-        number_of_linear_month: u64,
+        number_of_month: u64,
+        number_of_linear: u64,
         token_type: String,
     }
 
@@ -131,7 +132,8 @@ module yousui::launchpad_vesting {
         tge_time: u64,
         tge_unlock_percent: u64,
         number_of_cliff_months: u64,
-        number_of_linear_month: u64,
+        number_of_month: u64,
+        number_of_linear: u64,
         token_type: String,
         ctx: &mut TxContext
     ): (Vesting, String, ID) {
@@ -152,7 +154,8 @@ module yousui::launchpad_vesting {
                 tge_time,
                 tge_unlock_percent,
                 number_of_cliff_months,
-                number_of_linear_month,
+                number_of_month,
+                number_of_linear,
                 token_type
             },
         }, name, vesting_id )
@@ -205,13 +208,14 @@ module yousui::launchpad_vesting {
     }
 
     fun update_add_vesting_period(vesting_info: &VestingInfo, latest_period_list: &mut vector<Period>, token_amount: u64) {
+        let period = vesting_info.number_of_month / vesting_info.number_of_linear;
         let i = 0;
-        while((vesting_info.number_of_linear_month + 1) > i) {
+        while((period + 1) > i) {
             let child_period = vector::borrow_mut(latest_period_list, i);
             if (i == 0) {
                 child_period.unlock_amount = child_period.unlock_amount + cal_amount_with_percent(token_amount, vesting_info.tge_unlock_percent);
             } else {
-                let chid_percent = (MAX_PERCENT - vesting_info.tge_unlock_percent) / vesting_info.number_of_linear_month;
+                let chid_percent = (MAX_PERCENT - vesting_info.tge_unlock_percent) / period;
                 child_period.unlock_amount = child_period.unlock_amount + cal_amount_with_percent(token_amount, chid_percent);
             };
             i = i + 1;
@@ -219,13 +223,14 @@ module yousui::launchpad_vesting {
     }
 
     fun update_sub_vesting_period(vesting_info: &VestingInfo, latest_period_list: &mut vector<Period>, token_amount: u64) {
+        let period = vesting_info.number_of_month / vesting_info.number_of_linear;
         let i = 0;
-        while((vesting_info.number_of_linear_month + 1) > i) {
+        while((period + 1) > i) {
             let child_period = vector::borrow_mut(latest_period_list, i);
             if (i == 0) {
                 child_period.unlock_amount = child_period.unlock_amount - cal_amount_with_percent(token_amount, vesting_info.tge_unlock_percent);
             } else {
-                let chid_percent = (MAX_PERCENT - vesting_info.tge_unlock_percent) / vesting_info.number_of_linear_month;
+                let chid_percent = (MAX_PERCENT - vesting_info.tge_unlock_percent) / period;
                 child_period.unlock_amount = child_period.unlock_amount - cal_amount_with_percent(token_amount, chid_percent);
             };
             i = i + 1;
@@ -234,8 +239,9 @@ module yousui::launchpad_vesting {
 
     fun build_vesting_period(vesting_info: &VestingInfo, token_amount: u64): vector<Period> {
         let period_instance = vector::empty<Period>();
+        let period = vesting_info.number_of_month / vesting_info.number_of_linear;
         let i = 0;
-        while((vesting_info.number_of_linear_month + 1) > i) {
+        while((period + 1) > i) {
             vector::push_back(
                 &mut period_instance,
                 if (i == 0) {
@@ -247,7 +253,7 @@ module yousui::launchpad_vesting {
                             is_withdrawal: false
                         }
                 } else {
-                    let chid_percent = (MAX_PERCENT - vesting_info.tge_unlock_percent) / vesting_info.number_of_linear_month;
+                    let chid_percent = (MAX_PERCENT - vesting_info.tge_unlock_percent) / period;
                     Period {
                             period_id: i,
                             release_time: (vesting_info.tge_time + ((vesting_info.number_of_cliff_months + i) * THIRTY_DAYS)),
