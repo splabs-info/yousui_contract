@@ -1,21 +1,20 @@
 // SPDX-License-Identifier: Apache-2.0
-module yousui::launchpad_project {
+module yousui::project {
     use sui::transfer;
     use sui::display;
     use sui::package::{Self, Publisher};
     use sui::object::{Self, UID, ID};
     use sui::tx_context::{Self, TxContext};
     use sui::dynamic_object_field as dof;
+    use sui::event::emit;
 
     use std::string::{String, utf8};
-    use std::vector;
 
     friend yousui::admin;
-    friend yousui::launchpad_ido;
-    friend yousui::launchpad_presale;
-    friend yousui::launchpad_vesting;
+    friend yousui::launchpad;
+    friend yousui::ido;
 
-    struct ProjectInfo has store, copy {
+    struct ProjectInfo has store, copy, drop {
         project_id: ID,
         name: String,
         twitter: String,
@@ -28,26 +27,25 @@ module yousui::launchpad_project {
         link_url: String,
     }
 
-    struct Project has key {
+    struct Project has key, store {
         id: UID,
         info: ProjectInfo
     }
 
-    struct ProjectStorage has key, store {
-        id: UID,
-        projects: vector<ID>,
+    struct PROJECT has drop {}
+
+    // ======== Events =========
+
+    struct NewProject has copy, drop {
+        project_id: ID,
+        project_name: String,
+        sender: address
     }
 
-    struct LAUNCHPAD_PROJECT has drop {}
-
-    fun init(witness: LAUNCHPAD_PROJECT, ctx: &mut TxContext) {
+    fun init(witness: PROJECT, ctx: &mut TxContext) {
         let publisher = package::claim(witness, ctx);
         display<Project>(&publisher, ctx);
         transfer::public_transfer(publisher, tx_context::sender(ctx));
-        transfer::share_object(ProjectStorage {
-           id: object::new(ctx),
-           projects: vector::empty<ID>(),
-        });
     }
 
     fun display<T: key>(publisher: &Publisher, ctx: &mut TxContext) {
@@ -75,7 +73,6 @@ module yousui::launchpad_project {
     }
 
     public(friend) fun create_project(
-        project_storage: &mut ProjectStorage,
         name: String,
         twitter: String,
         discord: String,
@@ -86,10 +83,15 @@ module yousui::launchpad_project {
         description: String,
         link_url: String,
         ctx: &mut TxContext
-    ) {
+    ): Project {
         let project_uid = object::new(ctx);
         let project_id = object::uid_to_inner(&project_uid);
-        transfer::share_object(Project {
+        emit(NewProject {
+            project_id,
+            project_name: name,
+            sender: tx_context::sender(ctx)
+        });
+        Project {
             id: project_uid,
             info: ProjectInfo {
                 project_id,
@@ -103,12 +105,15 @@ module yousui::launchpad_project {
                 description,
                 link_url,
             }
-        });
-        vector::push_back(&mut project_storage.projects, project_id);
+        }
     }
 
     public fun get_project_info(project: &Project): ProjectInfo {
-        *&project.info
+        project.info
+    }
+
+    public fun get_project_name(project_info: &ProjectInfo): String {
+        project_info.name
     }
 
     public(friend) fun add_dynamic_object_field<T: key + store>(project: &mut Project, field_name: String, filed_value: T) {
@@ -119,15 +124,4 @@ module yousui::launchpad_project {
         dof::borrow_mut(&mut project.id, field_name)
     }
 
-    public(friend) fun has_dynamic_object_field_key(project: &Project, field_name: String): bool {
-        dof::exists_(&project.id, field_name)
-    }
-
-    public(friend) fun borrow_dynamic_object_field<T: key + store>(project: &Project, field_name: String): &T {
-        dof::borrow(&project.id, field_name)
-    }
-
-    // public(friend) fun borrow_uid(instance: &Project): &UID{
-    //     &instance.id
-    // }
 }

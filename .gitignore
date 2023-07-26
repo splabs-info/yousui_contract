@@ -1,4 +1,7 @@
+*.sh
 *.lock
 *.log.*
 build/
+yousui_free_minting_sc/
+error_code.md
 .DS_Store

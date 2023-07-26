@@ -2,27 +2,29 @@
 module yousui::admin {
     use sui::tx_context::{Self, TxContext};
     use sui::object::{Self, UID};
+    use sui::coin::{Coin};
     use sui::clock::{Clock};
-    use sui::transfer;
     use sui::vec_map;
-    // use sui::event;
+    use sui::transfer;
 
-    use std::string::{Self, String};
+    use std::string::{String};
     use std::vector;
 
-    use yousui::launchpad_project::{Self, Project, ProjectStorage};
-    use yousui::launchpad_presale::{Self, Round as PresaleRound};
-    use yousui::launchpad_ido::{Self, Round as IdoRound};
-    use yousui::launchpad_vesting::{Self, Vesting};
-    use yousui::whitelist;
-    use yousui::affiliate;
-    use yousui::utils;
+    use yousui::project::{Self, Project};
+    use yousui::ido::{Self, Round};
+    use yousui::policy;
+    use yousui::policy_purchase;
+    use yousui::policy_yousui_nft;
+    use yousui::policy_whitelist;
+    use yousui::vault;
+    use yousui::service_vesting;
+    use yousui::service_affiliate;
+    use yousui::service_preregister;
+    use yousui::launchpad::{Self, LaunchpadStorage};
 
-    const ESetterIsSetted: u64 = 100+0;
-    const ESetterIsNotSetted: u64 = 100+1;
-    const ERoundTypeInvalid: u64 = 100+2;
-    const E2LengthNotEq: u64 = 100+3;
-    const ELengthEqZero: u64 = 100+4;
+    const ESetterIsNotSetted: u64 = 100+0;
+    const ELengthEqZero: u64 = 100+1;
+    const ETwoLengthNotEq: u64 = 100+2;
 
     struct AdminCap has key, store {
         id: UID,
@@ -35,6 +37,8 @@ module yousui::admin {
     
     fun init(ctx: &mut TxContext) {
         let sender = tx_context::sender(ctx);
+
+        // Sender Admin cap to sender
         transfer::public_transfer(
             AdminCap {
                 id: object::new(ctx),
@@ -43,44 +47,23 @@ module yousui::admin {
         );
 
         let setters = vector::empty<address>();
+
         vector::push_back(&mut setters, sender);
+
+        // Share Admin storage
         transfer::share_object(AdminStorage {
            id: object::new(ctx),
            setters,
         });
+
     }
 
-    public entry fun add_setter(
-        _: &mut AdminCap,
-        admin_storage: &mut AdminStorage,
-        setter_address: address,
-        _ctx: &mut TxContext,
-    ) {
-        assert!(!vector::contains(&admin_storage.setters, &setter_address), ESetterIsSetted);
-        vector::push_back(&mut admin_storage.setters, setter_address);
-    }
 
-    public entry fun remove_setter(
-        _: &mut AdminCap,
-        admin_storage: &mut AdminStorage,
-        setter_address: address,
-        _ctx: &mut TxContext,
-    ) {
-        let (is_exists, index) = vector::index_of(&admin_storage.setters, &setter_address);
-        assert!(is_exists, ESetterIsNotSetted);
-        vector::remove(&mut admin_storage.setters, index);
-    }
-
-    fun check_is_setter(
-        admin_storage: &AdminStorage,
-        ctx: &mut TxContext,
-    ) {
-        assert!(vector::contains(&admin_storage.setters, &tx_context::sender(ctx)), ESetterIsNotSetted);
-    }
+//------------------------------------------------------------------------ Begin Admin actions ------------------------------------------------------------------------
 
     public entry fun create_project(
         admin_storage: &AdminStorage,
-        project_storage: &mut ProjectStorage,
+        launchpad: &mut LaunchpadStorage,
         name: String,
         twitter: String,
         discord: String,
@@ -93,90 +76,227 @@ module yousui::admin {
         ctx: &mut TxContext
     ) {
         check_is_setter(admin_storage, ctx);
-        launchpad_project::create_project(
-            project_storage,
+
+        launchpad::add_project<>(
+            launchpad,
             name,
-            twitter,
-            discord,
-            telegram,
-            medium,
-            website,
-            image_url,
-            description,
-            link_url, ctx
-        );
+            project::create_project(
+                name,
+                twitter,
+                discord,
+                telegram,
+                medium,
+                website,
+                image_url,
+                description,
+                link_url, ctx
+            )
+        )
     }
-        
-    public entry fun create_round_prasale<TOKEN>(
+
+    public entry fun new_round<TOKEN>(
         admin_storage: &AdminStorage,
-        clock: &Clock,
-        project: &mut Project,
+        launchpad: &mut LaunchpadStorage,
+        project_name: String,
         name: String,
         token_decimal: u8,
         start_at: u64,
         end_at: u64,
-        // max_allocation: u64,
-        // min_allocation: u64,
+        total_supply: u64,
+        purchase_type: vector<u8>,
+        ctx: &mut TxContext,
+    ) {
+        check_is_setter(admin_storage, ctx);
+        
+        let project = launchpad::borrow_mut_dynamic_object_field<Project>(launchpad, project_name);
+        let project_info = project::get_project_info(project);
+
+        project::add_dynamic_object_field(
+            project,
+            name,
+            ido::new_round<TOKEN>(
+                name,
+                project_info,
+                token_decimal,
+                start_at,
+                end_at,
+                total_supply,
+                purchase_type,
+                ctx
+            )
+        );
+    }
+
+    public entry fun add_payment<PAYMENT>(
+        admin_storage: &AdminStorage,
+        launchpad: &mut LaunchpadStorage,
+        project_name: String,
+        round_name: String,
+        ratio_per_token: u64,
+        ratio_decimal: u8, // should 9
+        payment_decimal: u8,
+        ctx: &mut TxContext
+    ) {
+        check_is_setter(admin_storage, ctx);
+
+        let project = launchpad::borrow_mut_dynamic_object_field<Project>(launchpad, project_name);
+        let round = project::borrow_mut_dynamic_object_field<Round>(project, round_name);
+        ido::add_payment<PAYMENT>(round, ratio_per_token, ratio_decimal, payment_decimal);
+    }
+
+    public entry fun remove_payment<PAYMENT>(
+        admin_storage: &AdminStorage,
+        launchpad: &mut LaunchpadStorage,
+        project_name: String,
+        round_name: String,
+        ctx: &mut TxContext
+    ) {
+        check_is_setter(admin_storage, ctx);
+
+        let project = launchpad::borrow_mut_dynamic_object_field<Project>(launchpad, project_name);
+        let round = project::borrow_mut_dynamic_object_field<Round>(project, round_name);
+        ido::remove_payment<PAYMENT>(round);
+    }
+
+//------------------- RULE ---------------------
+
+    entry public fun add_rule_yousui_nft(
+        admin_storage: &AdminStorage,
+        launchpad: &mut LaunchpadStorage,
+        project_name: String,
+        round_name: String,
+        ctx: &mut TxContext
+    ) {
+        check_is_setter(admin_storage, ctx);
+
+        let project = launchpad::borrow_mut_dynamic_object_field<Project>(launchpad, project_name);
+        let round = project::borrow_mut_dynamic_object_field(project, round_name);
+        let policy = ido::get_mut_policy(round);
+        policy_yousui_nft::add(policy);
+    }
+
+    entry public fun add_rule_purchase(
+        admin_storage: &AdminStorage,
+        launchpad: &mut LaunchpadStorage,
+        project_name: String,
+        round_name: String,
         min_purchase: u64,
         max_purchase: u64,
-        total_supply: u64,
         ctx: &mut TxContext
     ) {
         check_is_setter(admin_storage, ctx);
 
-        let round = launchpad_presale::new_round<TOKEN>(
-            clock,
-            project,
-            name,
-            token_decimal,
-            start_at,
-            end_at,
-            // max_allocation,
-            // min_allocation,
-            min_purchase,
-            max_purchase,
-            total_supply,
-            ctx    
-        );
-        launchpad_project::add_dynamic_object_field<PresaleRound>(project, name, round);
+        let project = launchpad::borrow_mut_dynamic_object_field<Project>(launchpad, project_name);
+        let round = project::borrow_mut_dynamic_object_field(project, round_name);
+        let policy = ido::get_mut_policy(round);
+        policy_purchase::add(policy, min_purchase, max_purchase);
     }
 
-    public entry fun create_round_ido<TOKEN>(
+    entry public fun add_rule_whitelist(
         admin_storage: &AdminStorage,
-        clock: &Clock,
-        project: &mut Project,
-        name: String,
-        token_decimal: u8,
-        start_at: u64,
-        end_at: u64,
-        // max_allocation: u64,
-        // min_allocation: u64,
-        min_purchase: u64,
-        total_supply: u64,
+        launchpad: &mut LaunchpadStorage,
+        project_name: String,
+        round_name: String,
+        investors: vector<address>,
+        ctx: &mut TxContext
+    ) {
+        check_is_setter(admin_storage, ctx);
+
+        let project = launchpad::borrow_mut_dynamic_object_field<Project>(launchpad, project_name);
+        let round = project::borrow_mut_dynamic_object_field(project, round_name);
+        let policy = ido::get_mut_policy(round);
+        policy_whitelist::add(policy, investors);
+    }
+
+    entry public fun remove_rule<Rule, Config: store + drop>(
+        admin_storage: &AdminStorage,
+        launchpad: &mut LaunchpadStorage,
+        project_name: String,
+        round_name: String,
+        ctx: &mut TxContext
+    ) {
+        check_is_setter(admin_storage, ctx);
+
+        let project = launchpad::borrow_mut_dynamic_object_field<Project>(launchpad, project_name);
+        let round = project::borrow_mut_dynamic_object_field(project, round_name);
+        let policy = ido::get_mut_policy(round);
+        policy::remove_rule<Rule, Config>(policy);
+    }
+
+    public entry fun set_whitelist<ROUND>(
+        admin_storage: &AdminStorage,
+        launchpad: &mut LaunchpadStorage,
+        project_name: String,
+        round_name: String,
+        investors: vector<address>,
         ctx: &mut TxContext
     ) {
         check_is_setter(admin_storage, ctx);
         
-        let round = launchpad_ido::new_round<TOKEN>(
-            clock,
-            project,
-            name,
-            token_decimal,
-            start_at,
-            end_at,
-            // max_allocation,
-            // min_allocation,
-            min_purchase,
-            total_supply,
-            ctx    
-        );
-        launchpad_project::add_dynamic_object_field<IdoRound>(project, name, round);
+        let project = launchpad::borrow_mut_dynamic_object_field<Project>(launchpad, project_name);
+        let round = project::borrow_mut_dynamic_object_field(project, round_name);
+        let policy = ido::get_mut_policy(round);
+        
+        policy_whitelist::set_whitelist(policy, investors);
     }
 
-    public entry fun create_vesting<ROUND>(
+    public entry fun set_whitelist_plus(
         admin_storage: &AdminStorage,
-        clock: &Clock,
-        project: &mut Project,
+        launchpad: &mut LaunchpadStorage,
+        project_name: String,
+        round_name: String,
+        investors: vector<address>,
+        ctx: &mut TxContext
+    ) {
+        check_is_setter(admin_storage, ctx);
+        
+        let project = launchpad::borrow_mut_dynamic_object_field<Project>(launchpad, project_name);
+        let round = project::borrow_mut_dynamic_object_field(project, round_name);
+        let policy = ido::get_mut_policy(round);
+        
+        policy_whitelist::set_whitelist(policy, investors);
+    }
+
+
+    public entry fun remove_whitelist(
+        admin_storage: &AdminStorage,
+        launchpad: &mut LaunchpadStorage,
+        project_name: String,
+        round_name: String,
+        investors: vector<address>,
+        ctx: &mut TxContext
+    ) {
+        check_is_setter(admin_storage, ctx);
+
+        let project = launchpad::borrow_mut_dynamic_object_field<Project>(launchpad, project_name);
+        let round = project::borrow_mut_dynamic_object_field(project, round_name);
+        let policy = ido::get_mut_policy(round);
+
+        policy_whitelist::remove_whitelist(policy, investors);
+    }
+
+    public entry fun clear_whitelist(
+        admin_storage: &AdminStorage,
+        launchpad: &mut LaunchpadStorage,
+        project_name: String,
+        round_name: String,
+        ctx: &mut TxContext
+    ) {
+        check_is_setter(admin_storage, ctx);
+
+        let project = launchpad::borrow_mut_dynamic_object_field<Project>(launchpad, project_name);
+        let round = project::borrow_mut_dynamic_object_field(project, round_name);
+        let policy = ido::get_mut_policy(round);
+
+        policy_whitelist::clear_whitelist(policy);
+    }
+
+//------------------- RULE ---------------------
+
+    entry public fun add_service_vesting(
+        admin_storage: &AdminStorage,
+        launchpad: &mut LaunchpadStorage,
+        project_name: String,
         round_name: String,
         tge_time: u64,
         tge_unlock_percent: u64,
@@ -187,540 +307,418 @@ module yousui::admin {
     ) {
         check_is_setter(admin_storage, ctx);
 
-        if (utils::get_full_type<ROUND>() == utils::get_full_type<PresaleRound>()) {
-            let b_round = launchpad_project::borrow_dynamic_object_field(project, round_name);
-            let (vesting, name, vesting_id) = launchpad_vesting::new_vesting(
-                clock,
-                project,
-                round_name,
-                tge_time,
-                tge_unlock_percent,
-                number_of_cliff_months,
-                number_of_month,
-                number_of_linear,
-                launchpad_presale::get_token_type(b_round),
-                ctx,
-            );
-            let bm_round = launchpad_project::borrow_mut_dynamic_object_field(project, round_name);
-            launchpad_presale::set_vesting(bm_round, vesting_id);
-            launchpad_project::add_dynamic_object_field<Vesting>(project, name, vesting);
-        } else 
-        if (utils::get_full_type<ROUND>() == utils::get_full_type<IdoRound>()) {
-            let b_round = launchpad_project::borrow_dynamic_object_field(project, round_name);
-            let (vesting, name, vesting_id) = launchpad_vesting::new_vesting(
-                clock,
-                project,
-                round_name,
-                tge_time,
-                tge_unlock_percent,
-                number_of_cliff_months,
-                number_of_month,
-                number_of_linear,
-                launchpad_ido::get_token_type(b_round),
-                ctx,
-            );
-            let bm_round = launchpad_project::borrow_mut_dynamic_object_field(project, round_name);
-            launchpad_ido::set_vesting(bm_round, vesting_id);
-            launchpad_project::add_dynamic_object_field<Vesting>(project, name, vesting);
-        } else {
-            abort(ERoundTypeInvalid)
-        };
-    } 
-
-    public entry fun add_payment<ROUND, PAYMENT>(
-        admin_storage: &AdminStorage,
-        project: &mut Project,
-        round_name: String,
-        ratio_per_token: u64,
-        ratio_decimal: u8, // should 9
-        payment_decimal: u8,
-        ctx: &mut TxContext
-    ) {
-        check_is_setter(admin_storage, ctx);
-
-        if (utils::get_full_type<ROUND>() == utils::get_full_type<PresaleRound>()) {
-            let bm_round = launchpad_project::borrow_mut_dynamic_object_field(project, round_name);
-            launchpad_presale::add_payment<PAYMENT>(bm_round, ratio_per_token, ratio_decimal, payment_decimal, ctx);
-        } else if (utils::get_full_type<ROUND>() == utils::get_full_type<IdoRound>()) {
-            let bm_round = launchpad_project::borrow_mut_dynamic_object_field(project, round_name);
-            launchpad_ido::add_payment<PAYMENT>(bm_round, ratio_per_token, ratio_decimal, payment_decimal, ctx);
-        } else {
-            abort(ERoundTypeInvalid)
-        };
+        let project = launchpad::borrow_mut_dynamic_object_field<Project>(launchpad, project_name);
+        let round = project::borrow_mut_dynamic_object_field(project, round_name);
+        let project_info = ido::get_project(round);
+        let token_type = ido::get_token_type(round);
+        let service = ido::get_mut_service(round);
+        
+        service_vesting::add(
+            service,
+            project_info,
+            tge_time,
+            tge_unlock_percent,
+            number_of_cliff_months,
+            number_of_month,
+            number_of_linear,
+            token_type,
+            ctx
+        )
     }
 
-    public entry fun remove_payment<ROUND, PAYMENT>(
+    entry public fun remove_service_vesting(
         admin_storage: &AdminStorage,
-        project: &mut Project,
+        launchpad: &mut LaunchpadStorage,
+        project_name: String,
         round_name: String,
         ctx: &mut TxContext
     ) {
         check_is_setter(admin_storage, ctx);
 
-        if (utils::get_full_type<ROUND>() == utils::get_full_type<PresaleRound>()) {
-            let bm_round = launchpad_project::borrow_mut_dynamic_object_field(project, round_name);
-            launchpad_presale::remove_payment<PAYMENT>(bm_round);
-        } else if (utils::get_full_type<ROUND>() == utils::get_full_type<IdoRound>()) {
-            let bm_round = launchpad_project::borrow_mut_dynamic_object_field(project, round_name);
-            launchpad_ido::remove_payment<PAYMENT>(bm_round);
-        } else {
-            abort(ERoundTypeInvalid)
-        };
+        let project = launchpad::borrow_mut_dynamic_object_field<Project>(launchpad, project_name);
+        let round = project::borrow_mut_dynamic_object_field(project, round_name);
+        let service = ido::get_mut_service(round);
+
+        service_vesting::remove(service);
     }
 
-    public entry fun set_total_supply<ROUND>(
+
+// ----- Affiliate -----
+    entry public fun add_service_affiliate(
         admin_storage: &AdminStorage,
-        project: &mut Project,
+        launchpad: &mut LaunchpadStorage,
+        project_name: String,
         round_name: String,
-        new_total_supply: u64,
         ctx: &mut TxContext
     ) {
         check_is_setter(admin_storage, ctx);
 
-        if (utils::get_full_type<ROUND>() == utils::get_full_type<PresaleRound>()) {
-            let bm_round = launchpad_project::borrow_mut_dynamic_object_field(project, round_name);
-            launchpad_presale::set_total_supply(bm_round, new_total_supply);
-        } else if (utils::get_full_type<ROUND>() == utils::get_full_type<IdoRound>()) {
-            let bm_round = launchpad_project::borrow_mut_dynamic_object_field(project, round_name);
-            launchpad_ido::set_total_supply(bm_round, new_total_supply);
-        } else {
-            abort(ERoundTypeInvalid)
-        };
+        let project = launchpad::borrow_mut_dynamic_object_field<Project>(launchpad, project_name);
+        let round = project::borrow_mut_dynamic_object_field(project, round_name);
+        let service = ido::get_mut_service(round);
+        
+        service_affiliate::add(
+            service,
+            ctx
+        )
     }
 
-    public entry fun set_min_purchase<ROUND>(
+    entry public fun remove_service_affiliate(
         admin_storage: &AdminStorage,
-        project: &mut Project,
+        launchpad: &mut LaunchpadStorage,
+        project_name: String,
         round_name: String,
-        new_min_purchase: u64,
         ctx: &mut TxContext
     ) {
         check_is_setter(admin_storage, ctx);
 
-        if (utils::get_full_type<ROUND>() == utils::get_full_type<PresaleRound>()) {
-            let bm_round = launchpad_project::borrow_mut_dynamic_object_field(project, round_name);
-            launchpad_presale::set_min_purchase(bm_round, new_min_purchase);
-        } else if (utils::get_full_type<ROUND>() == utils::get_full_type<IdoRound>()) {
-            let bm_round = launchpad_project::borrow_mut_dynamic_object_field(project, round_name);
-            launchpad_ido::set_min_purchase(bm_round, new_min_purchase);
-        } else {
-            abort(ERoundTypeInvalid)
-        };
+        let project = launchpad::borrow_mut_dynamic_object_field<Project>(launchpad, project_name);
+        let round = project::borrow_mut_dynamic_object_field(project, round_name);
+        let service = ido::get_mut_service(round);
+
+        service_affiliate::remove(service);
     }
 
-    public entry fun set_max_purchase<ROUND>(
+    entry public fun add_affiliator_list(
         admin_storage: &AdminStorage,
-        project: &mut Project,
+        launchpad: &mut LaunchpadStorage,
+        project_name: String,
         round_name: String,
-        new_max_purchase: u64,
+        affiliators: vector<address>,
+        nations: vector<String>,
         ctx: &mut TxContext
     ) {
         check_is_setter(admin_storage, ctx);
 
-        if (utils::get_full_type<ROUND>() == utils::get_full_type<PresaleRound>()) {
-            let bm_round = launchpad_project::borrow_mut_dynamic_object_field(project, round_name);
-            launchpad_presale::set_max_purchase(bm_round, new_max_purchase);
-        // } else if (utils::get_full_type<ROUND>() == utils::get_full_type<IdoRound>()) {
-        //     let bm_round = launchpad_project::borrow_mut_dynamic_object_field(project, round_name);
-        //     launchpad_ido::set_end_at(bm_round, new_end_at);
-        } else {
-            abort(ERoundTypeInvalid)
+        assert!(vector::length(&affiliators) > 0, ELengthEqZero);
+        assert!(vector::length(&affiliators) == vector::length(&nations), ETwoLengthNotEq);
+
+        let affiliator_list = vec_map::empty();
+        while (!vector::is_empty(&affiliators)) {
+            vec_map::insert(&mut affiliator_list, vector::pop_back(&mut affiliators), vector::pop_back(&mut nations))
         };
+
+        let project = launchpad::borrow_mut_dynamic_object_field<Project>(launchpad, project_name);
+        let round = project::borrow_mut_dynamic_object_field(project, round_name);
+        let service = ido::get_mut_service(round);
+
+        service_affiliate::add_affiliator_list(service, affiliator_list);
     }
 
-    public entry fun set_end_at<ROUND>(
+    entry public fun remove_affiliator_list(
         admin_storage: &AdminStorage,
-        project: &mut Project,
+        launchpad: &mut LaunchpadStorage,
+        project_name: String,
+        round_name: String,
+        affiliators: vector<address>,
+        nations: vector<String>,
+        ctx: &mut TxContext
+    ) {
+        check_is_setter(admin_storage, ctx);
+
+        assert!(vector::length(&affiliators) > 0, ELengthEqZero);
+        assert!(vector::length(&affiliators) == vector::length(&nations), ETwoLengthNotEq);
+
+        let affiliator_list = vec_map::empty();
+        while (!vector::is_empty(&affiliators)) {
+            vec_map::insert(&mut affiliator_list, vector::pop_back(&mut affiliators), vector::pop_back(&mut nations))
+        };
+
+        let project = launchpad::borrow_mut_dynamic_object_field<Project>(launchpad, project_name);
+        let round = project::borrow_mut_dynamic_object_field(project, round_name);
+        let service = ido::get_mut_service(round);
+
+        service_affiliate::remove_affiliator_list(service, affiliator_list);
+    }
+
+
+// ----- Affiliate -----
+
+
+// ----- SERVICE PREREGISTER BEGIN -----
+
+    entry public fun add_service_preregister(
+        admin_storage: &AdminStorage,
+        launchpad: &mut LaunchpadStorage,
+        project_name: String,
+        round_name: String,
+        ctx: &mut TxContext
+    ) {
+        check_is_setter(admin_storage, ctx);
+
+        let project = launchpad::borrow_mut_dynamic_object_field<Project>(launchpad, project_name);
+        let round = project::borrow_mut_dynamic_object_field(project, round_name);
+        let service = ido::get_mut_service(round);
+        
+        service_preregister::add(
+            service,
+            ctx
+        )
+    }
+
+    entry public fun set_is_open_claim_refund(
+        admin_storage: &AdminStorage,
+        launchpad: &mut LaunchpadStorage,
+        project_name: String,
+        round_name: String,
+        is_open_claim_refund: bool,
+        ctx: &mut TxContext
+    ) {
+        check_is_setter(admin_storage, ctx);
+
+        let project = launchpad::borrow_mut_dynamic_object_field<Project>(launchpad, project_name);
+        let round = project::borrow_mut_dynamic_object_field(project, round_name);
+        let service = ido::get_mut_service(round);
+        
+        service_preregister::set_is_open_claim_refund(
+            service,
+            is_open_claim_refund
+        )
+    }
+
+    entry public fun remove_service_preregister(
+        admin_storage: &AdminStorage,
+        launchpad: &mut LaunchpadStorage,
+        project_name: String,
+        round_name: String,
+        ctx: &mut TxContext
+    ) {
+        check_is_setter(admin_storage, ctx);
+
+        let project = launchpad::borrow_mut_dynamic_object_field<Project>(launchpad, project_name);
+        let round = project::borrow_mut_dynamic_object_field(project, round_name);
+        let service = ido::get_mut_service(round);
+
+        service_preregister::remove(service);
+    }
+
+// ----- SERVICE PREREGISTER END -----
+
+
+    public entry fun set_end_at(
+        admin_storage: &AdminStorage,
+        launchpad: &mut LaunchpadStorage,
+        project_name: String,
         round_name: String,
         new_end_at: u64,
         ctx: &mut TxContext
     ) {
         check_is_setter(admin_storage, ctx);
 
-        if (utils::get_full_type<ROUND>() == utils::get_full_type<PresaleRound>()) {
-            let bm_round = launchpad_project::borrow_mut_dynamic_object_field(project, round_name);
-            launchpad_presale::set_end_at(bm_round, new_end_at);
-        } else if (utils::get_full_type<ROUND>() == utils::get_full_type<IdoRound>()) {
-            let bm_round = launchpad_project::borrow_mut_dynamic_object_field(project, round_name);
-            launchpad_ido::set_end_at(bm_round, new_end_at);
-        } else {
-            abort(ERoundTypeInvalid)
-        };
+        let project = launchpad::borrow_mut_dynamic_object_field<Project>(launchpad, project_name);
+        let bm_round = project::borrow_mut_dynamic_object_field(project, round_name);
+        ido::set_end_at(bm_round, new_end_at);
     }
 
-    public entry fun set_start_at<ROUND>(
+    public entry fun set_start_at(
         admin_storage: &AdminStorage,
-        project: &mut Project,
+        launchpad: &mut LaunchpadStorage,
+        project_name: String,
         round_name: String,
         new_start_at: u64,
         ctx: &mut TxContext
     ) {
         check_is_setter(admin_storage, ctx);
 
-        if (utils::get_full_type<ROUND>() == utils::get_full_type<PresaleRound>()) {
-            let bm_round = launchpad_project::borrow_mut_dynamic_object_field(project, round_name);
-            launchpad_presale::set_start_at(bm_round, new_start_at);
-        } else if (utils::get_full_type<ROUND>() == utils::get_full_type<IdoRound>()) {
-            let bm_round = launchpad_project::borrow_mut_dynamic_object_field(project, round_name);
-            launchpad_ido::set_start_at(bm_round, new_start_at);
-        } else {
-            abort(ERoundTypeInvalid)
-        };
+        let project = launchpad::borrow_mut_dynamic_object_field<Project>(launchpad, project_name);
+        let bm_round = project::borrow_mut_dynamic_object_field(project, round_name);
+        ido::set_start_at(bm_round, new_start_at);
     }
 
-    public entry fun set_is_pause<ROUND>(
+    public entry fun set_payment_rate<PAYMENT>(
         admin_storage: &AdminStorage,
-        project: &mut Project,
+        launchpad: &mut LaunchpadStorage,
+        project_name: String,
         round_name: String,
-        new_is_pause: bool,
+        new_ratio_per_token: u64,
         ctx: &mut TxContext
     ) {
         check_is_setter(admin_storage, ctx);
 
-        if (utils::get_full_type<ROUND>() == utils::get_full_type<PresaleRound>()) {
-            let bm_round = launchpad_project::borrow_mut_dynamic_object_field(project, round_name);
-            launchpad_presale::set_is_pause(bm_round, new_is_pause);
-        } else if (utils::get_full_type<ROUND>() == utils::get_full_type<IdoRound>()) {
-            let bm_round = launchpad_project::borrow_mut_dynamic_object_field(project, round_name);
-            launchpad_ido::set_is_pause(bm_round, new_is_pause);
-        } else {
-            abort(ERoundTypeInvalid)
-        };
+        let project = launchpad::borrow_mut_dynamic_object_field<Project>(launchpad, project_name);
+        let bm_round = project::borrow_mut_dynamic_object_field(project, round_name);
+        ido::set_payment_rate<PAYMENT>(bm_round, new_ratio_per_token);
     }
 
-    public entry fun set_is_open_claim_commission<ROUND>(
+    public entry fun set_pause(
         admin_storage: &AdminStorage,
-        project: &mut Project,
+        launchpad: &mut LaunchpadStorage,
+        project_name: String,
         round_name: String,
-        new_is_open_claim_commission: bool,
+        is_pause: bool,
         ctx: &mut TxContext
     ) {
         check_is_setter(admin_storage, ctx);
 
-        if (utils::get_full_type<ROUND>() == utils::get_full_type<PresaleRound>()) {
-            let bm_round = launchpad_project::borrow_mut_dynamic_object_field(project, round_name);
-            launchpad_presale::set_is_open_claim_commission(bm_round, new_is_open_claim_commission);
-        // } else if (utils::get_full_type<ROUND>() == utils::get_full_type<IdoRound>()) {
-        //     let bm_round = launchpad_project::borrow_mut_dynamic_object_field(project, round_name);
-        //     launchpad_ido::set_is_open_claim_vesting(bm_round, new_is_open_claim_vesting);
-        } else {
-            abort(ERoundTypeInvalid)
-        };
+        let project = launchpad::borrow_mut_dynamic_object_field<Project>(launchpad, project_name);
+        let bm_round = project::borrow_mut_dynamic_object_field(project, round_name);
+        ido::set_pause(bm_round, is_pause);
     }
 
-    public entry fun set_is_open_claim_vesting<ROUND>(
+    public entry fun set_total_supply(
         admin_storage: &AdminStorage,
-        project: &mut Project,
+        launchpad: &mut LaunchpadStorage,
+        project_name: String,
         round_name: String,
-        new_is_open_claim_vesting: bool,
+        total_supply: u64,
         ctx: &mut TxContext
     ) {
         check_is_setter(admin_storage, ctx);
 
-        if (utils::get_full_type<ROUND>() == utils::get_full_type<PresaleRound>()) {
-            let bm_round = launchpad_project::borrow_mut_dynamic_object_field(project, round_name);
-            launchpad_presale::set_is_open_claim_vesting(bm_round, new_is_open_claim_vesting);
-        } else if (utils::get_full_type<ROUND>() == utils::get_full_type<IdoRound>()) {
-            let bm_round = launchpad_project::borrow_mut_dynamic_object_field(project, round_name);
-            launchpad_ido::set_is_open_claim_vesting(bm_round, new_is_open_claim_vesting);
-        } else {
-            abort(ERoundTypeInvalid)
-        };
+        let project = launchpad::borrow_mut_dynamic_object_field<Project>(launchpad, project_name);
+        let bm_round = project::borrow_mut_dynamic_object_field(project, round_name);
+        ido::set_total_supply(bm_round, total_supply);
     }
 
-    public entry fun set_is_open_claim_refund<ROUND>(
+    public entry fun set_total_sold(
         admin_storage: &AdminStorage,
-        project: &mut Project,
+        launchpad: &mut LaunchpadStorage,
+        project_name: String,
         round_name: String,
-        new_is_open_claim_refund: bool,
+        total_sold: u64,
         ctx: &mut TxContext
     ) {
         check_is_setter(admin_storage, ctx);
 
-        if (utils::get_full_type<ROUND>() == utils::get_full_type<IdoRound>()) {
-            let bm_round = launchpad_project::borrow_mut_dynamic_object_field(project, round_name);
-            launchpad_ido::set_is_open_claim_refund(bm_round, new_is_open_claim_refund);
-        } else {
-            abort(ERoundTypeInvalid)
-        };
+        let project = launchpad::borrow_mut_dynamic_object_field<Project>(launchpad, project_name);
+        let bm_round = project::borrow_mut_dynamic_object_field(project, round_name);
+        ido::set_total_sold(bm_round, total_sold);
     }
 
-
-    public entry fun withdraw_all_balance<ROUND, T>(
+    public entry fun set_push_total_sold(
         admin_storage: &AdminStorage,
-        project: &mut Project,
-        round_name: String,
-        ctx: &mut TxContext
-    ) {
-        check_is_setter(admin_storage, ctx);
-
-        if (utils::get_full_type<ROUND>() == utils::get_full_type<PresaleRound>()) {
-            let bm_round = launchpad_project::borrow_mut_dynamic_object_field(project, round_name);
-            launchpad_presale::withdraw_all_balance<T>(bm_round, ctx);
-        } else if (utils::get_full_type<ROUND>() == utils::get_full_type<IdoRound>()) {
-            let bm_round = launchpad_project::borrow_mut_dynamic_object_field(project, round_name);
-            launchpad_ido::withdraw_all_balance<T>(bm_round, ctx);
-        } else {
-            abort(ERoundTypeInvalid)
-        };
-    }
-
-
-    public entry fun withdraw_balance<ROUND, T>(
-        admin_storage: &AdminStorage,
-        project: &mut Project,
+        launchpad: &mut LaunchpadStorage,
+        project_name: String,
         round_name: String,
         amount: u64,
         ctx: &mut TxContext
     ) {
         check_is_setter(admin_storage, ctx);
 
-        if (utils::get_full_type<ROUND>() == utils::get_full_type<PresaleRound>()) {
-            let bm_round = launchpad_project::borrow_mut_dynamic_object_field(project, round_name);
-            launchpad_presale::withdraw_balance<T>(bm_round, amount, ctx);
-        } else if (utils::get_full_type<ROUND>() == utils::get_full_type<IdoRound>()) {
-            let bm_round = launchpad_project::borrow_mut_dynamic_object_field(project, round_name);
-            launchpad_ido::withdraw_balance<T>(bm_round, amount, ctx);
-        } else {
-            abort(ERoundTypeInvalid)
-        };
+        let project = launchpad::borrow_mut_dynamic_object_field<Project>(launchpad, project_name);
+        let bm_round = project::borrow_mut_dynamic_object_field(project, round_name);
+        ido::set_push_total_sold(bm_round, amount);
     }
 
-    public entry fun set_use_nft_purchase<ROUND>(
+    public entry fun fix(
         admin_storage: &AdminStorage,
-        project: &mut Project,
+        launchpad: &mut LaunchpadStorage,
+        project_name: String,
         round_name: String,
-        is_use_nft_purchase: bool,
+        amount: u64,
         ctx: &mut TxContext
     ) {
         check_is_setter(admin_storage, ctx);
 
-        if (utils::get_full_type<ROUND>() == utils::get_full_type<PresaleRound>()) {
-            let bm_round = launchpad_project::borrow_mut_dynamic_object_field(project, round_name);
-            launchpad_presale::set_use_nft_purchase(bm_round, is_use_nft_purchase);
-        } else {
-            abort(ERoundTypeInvalid)
-        };
+        let project = launchpad::borrow_mut_dynamic_object_field<Project>(launchpad, project_name);
+        let bm_round = project::borrow_mut_dynamic_object_field(project, round_name);
+        ido::set_push_total_sold(bm_round, amount);
     }
 
-    public entry fun set_use_once_purchase<ROUND>(
+    public entry fun set_is_open_claim_vesting(
         admin_storage: &AdminStorage,
-        project: &mut Project,
+        launchpad: &mut LaunchpadStorage,
+        project_name: String,
         round_name: String,
-        is_once_purchase: bool,
+        is_open_claim_vesting: bool,
         ctx: &mut TxContext
     ) {
         check_is_setter(admin_storage, ctx);
 
-        if (utils::get_full_type<ROUND>() == utils::get_full_type<PresaleRound>()) {
-            let bm_round = launchpad_project::borrow_mut_dynamic_object_field(project, round_name);
-            launchpad_presale::set_use_once_purchase(bm_round, is_once_purchase);
-        } else {
-            abort(ERoundTypeInvalid)
-        };
+        let project = launchpad::borrow_mut_dynamic_object_field<Project>(launchpad, project_name);
+        let round = project::borrow_mut_dynamic_object_field(project, round_name);
+        let service = ido::get_mut_service(round);
+        service_vesting::set_is_open_claim_vesting(service, is_open_claim_vesting);
     }
 
-    public entry fun use_affiliate_for_project<ROUND>(
+    entry public fun set_is_vesting_info(
         admin_storage: &AdminStorage,
-        project: &mut Project,
+        launchpad: &mut LaunchpadStorage,
+        project_name: String,
         round_name: String,
-        ctx: &mut TxContext
-    ) {
-        check_is_setter(admin_storage, ctx);
-        let name = round_name;
-        string::append_utf8(&mut name, affiliate::get_name());
-
-        launchpad_project::add_dynamic_object_field(project, name, affiliate::new_affiliate_system(ctx));
-
-        set_is_use_affiliate<ROUND>(
-            admin_storage,
-            project,
-            round_name,
-            true,
-            ctx
-        );
-    }
-
-    public entry fun add_commission_list(
-        admin_storage: &AdminStorage,
-        project: &mut Project,
-        round_name: String,
-        milestones: vector<u64>,
-        percents: vector<u64>,
+        tge_time: u64,
+        tge_unlock_percent: u64,
+        number_of_cliff_months: u64,
+        number_of_month: u64,
+        number_of_linear: u64,
         ctx: &mut TxContext
     ) {
         check_is_setter(admin_storage, ctx);
 
-        assert!(vector::length(&milestones) > 0, ELengthEqZero);
-        assert!(vector::length(&milestones) == vector::length(&percents), E2LengthNotEq);
-
-        string::append_utf8(&mut round_name, affiliate::get_name());
-        let bm_commission_setting = launchpad_project::borrow_mut_dynamic_object_field(project, round_name);
-
-        let profits = vec_map::empty();
-        while (!vector::is_empty(&milestones)) {
-            vec_map::insert(&mut profits, vector::pop_back(&mut milestones), vector::pop_back(&mut percents))
-        };
-
-        affiliate::add_commission_list(bm_commission_setting, &mut profits);
+        let project = launchpad::borrow_mut_dynamic_object_field<Project>(launchpad, project_name);
+        let round = project::borrow_mut_dynamic_object_field(project, round_name);
+        let token_type = ido::get_token_type(round);
+        let service = ido::get_mut_service(round);
+        
+        service_vesting::set_is_vesting_info(
+            service,
+            tge_time,
+            tge_unlock_percent,
+            number_of_cliff_months,
+            number_of_month,
+            number_of_linear,
+            token_type
+        )
     }
 
-    public entry fun remove_commission_list(
+    public entry fun deposit_round<T>(
         admin_storage: &AdminStorage,
-        project: &mut Project,
+        launchpad: &mut LaunchpadStorage,
+        project_name: String,
         round_name: String,
-        milestones: vector<u64>,
+        coin: Coin<T>,
         ctx: &mut TxContext
     ) {
-        check_is_setter(admin_storage, ctx);
-        string::append_utf8(&mut round_name, affiliate::get_name());
-        let bm_commission_setting = launchpad_project::borrow_mut_dynamic_object_field(project, round_name);
-        affiliate::remove_commission_list(bm_commission_setting, milestones);
-    }
 
-    public entry fun add_affiliator_list(
-        admin_storage: &AdminStorage,
-        project: &mut Project,
-        round_name: String,
-        affiliators: vector<address>,
-        nations: vector<String>,
-        ctx: &mut TxContext
-    ) {
         check_is_setter(admin_storage, ctx);
 
-        assert!(vector::length(&affiliators) > 0, ELengthEqZero);
-        assert!(vector::length(&affiliators) == vector::length(&nations), E2LengthNotEq);
+        let project = launchpad::borrow_mut_dynamic_object_field<Project>(launchpad, project_name);
+        let round = project::borrow_mut_dynamic_object_field(project, round_name);
+        let vaults = ido::get_mut_vault(round);
 
-        string::append_utf8(&mut round_name, affiliate::get_name());
-        let bm_commission_setting = launchpad_project::borrow_mut_dynamic_object_field(project, round_name);
-
-        let affiliator_list = vec_map::empty();
-        while (!vector::is_empty(&affiliators)) {
-            vec_map::insert(&mut affiliator_list, vector::pop_back(&mut affiliators), vector::pop_back(&mut nations))
-        };
-
-        affiliate::add_affiliator_list(bm_commission_setting, &mut affiliator_list, ctx);
+        vault::deposit<T>(vaults, coin, ctx)
     }
 
-    public entry fun remove_affiliator_list(
+    public entry fun withdraw_round<T>(
         admin_storage: &AdminStorage,
-        project: &mut Project,
+        launchpad: &mut LaunchpadStorage,
+        project_name: String,
         round_name: String,
-        affiliators: vector<address>,
-        nations: vector<String>,
+        amount: u64,
         ctx: &mut TxContext
     ) {
         check_is_setter(admin_storage, ctx);
 
-        assert!(vector::length(&affiliators) > 0, ELengthEqZero);
-        assert!(vector::length(&affiliators) == vector::length(&nations), E2LengthNotEq);
+        let project = launchpad::borrow_mut_dynamic_object_field<Project>(launchpad, project_name);
+        let round = project::borrow_mut_dynamic_object_field(project, round_name);
+        let vaults = ido::get_mut_vault(round);
 
-        string::append_utf8(&mut round_name, affiliate::get_name());
-        let bm_commission_setting = launchpad_project::borrow_mut_dynamic_object_field(project, round_name);
-
-        let affiliator_list = vec_map::empty();
-        while (!vector::is_empty(&affiliators)) {
-            vec_map::insert(&mut affiliator_list, vector::pop_back(&mut affiliators), vector::pop_back(&mut nations))
-        };
-
-        affiliate::remove_affiliator_list(bm_commission_setting, &mut affiliator_list);
+        vault::withdraw<T>(vaults, amount, tx_context::sender(ctx), ctx)
     }
 
-    public entry fun set_is_use_affiliate<ROUND>(
+    public entry fun airdrop_vesting(
         admin_storage: &AdminStorage,
-        project: &mut Project,
+        launchpad: &mut LaunchpadStorage,
+        project_name: String,
         round_name: String,
-        is_use_affiliate: bool,
-        ctx: &mut TxContext
-    ) {
-        check_is_setter(admin_storage, ctx);
-        if (utils::get_full_type<ROUND>() == utils::get_full_type<PresaleRound>()) {
-            let bm_round = launchpad_project::borrow_mut_dynamic_object_field<PresaleRound>(project, round_name);
-            launchpad_presale::set_is_use_affiliate(bm_round, is_use_affiliate);
-        // }else if (utils::get_full_type<ROUND>() == utils::get_full_type<IdoRound>()) {
-        //     let bm_round = launchpad_project::borrow_mut_dynamic_object_field<IdoRound>(project, round_name);
-        //     launchpad_ido::set_is_use_affiliate(bm_round, is_use_affiliate);
-        } else {
-            abort(ERoundTypeInvalid)
-        };
-    }
-
-    public entry fun set_whitelist<ROUND>(
-        admin_storage: &AdminStorage,
-        project: &mut Project,
-        round_name: String,
-        investors: vector<address>,
-        ctx: &mut TxContext
-    ) {
-        check_is_setter(admin_storage, ctx);
-        let name = round_name;
-        string::append_utf8(&mut name, whitelist::get_name());
-        if (launchpad_project::has_dynamic_object_field_key(project, name)) {
-            let bm_whitelist = launchpad_project::borrow_mut_dynamic_object_field(project, name);
-            whitelist::set_whitelist(bm_whitelist, investors);
-        } else {
-            launchpad_project::add_dynamic_object_field(project, name, whitelist::new_whitelist(investors, ctx));
-        };
-
-        if (utils::get_full_type<ROUND>() == utils::get_full_type<PresaleRound>()) {
-            let bm_round = launchpad_project::borrow_mut_dynamic_object_field<PresaleRound>(project, round_name);
-            launchpad_presale::set_is_use_whitelist(bm_round, true);
-        } else if (utils::get_full_type<ROUND>() == utils::get_full_type<IdoRound>()) {
-            let bm_round = launchpad_project::borrow_mut_dynamic_object_field<IdoRound>(project, round_name);
-            launchpad_ido::set_is_use_whitelist(bm_round, true);
-        } else {
-            abort(ERoundTypeInvalid)
-        };
-    }
-
-    public entry fun remove_whitelist(
-        admin_storage: &AdminStorage,
-        project: &mut Project,
-        round_name: String,
-        investors: vector<address>,
+        clock: &Clock,
+        arr_user_address: vector<address>,
+        arr_token_amount: vector<u64>,
         ctx: &mut TxContext
     ) {
         check_is_setter(admin_storage, ctx);
 
-        string::append_utf8(&mut round_name, whitelist::get_name());
-        let bm_whitelist = launchpad_project::borrow_mut_dynamic_object_field(project, round_name);
-        whitelist::remove_whitelist(bm_whitelist, investors);
+        let project = launchpad::borrow_mut_dynamic_object_field<Project>(launchpad, project_name);
+        let round = project::borrow_mut_dynamic_object_field(project, round_name);
+        ido::airdrop_vesting(clock, round, arr_user_address, arr_token_amount, ctx)
     }
 
-    public entry fun clear_whitelist(
+//------------------------------------------------------------------------ End Admin actions ------------------------------------------------------------------------
+
+    fun check_is_setter(
         admin_storage: &AdminStorage,
-        project: &mut Project,
-        round_name: String,
-        ctx: &mut TxContext
+        ctx: &mut TxContext,
     ) {
-        check_is_setter(admin_storage, ctx);
-
-        string::append_utf8(&mut round_name, whitelist::get_name());
-        let bm_whitelist = launchpad_project::borrow_mut_dynamic_object_field(project, round_name);
-        whitelist::clear_whitelist(bm_whitelist);
-    }
-
-    public entry fun add_vesting(
-        admin_storage: &AdminStorage,
-        project: &mut Project,
-        round_name: String,
-        token_amount: u64,
-        ctx: &mut TxContext
-    ) {
-        check_is_setter(admin_storage, ctx);
-
-        launchpad_vesting::add_vesting(project, round_name, token_amount, ctx);
-    }
-
-    public entry fun sub_vesting(
-        admin_storage: &AdminStorage,
-        project: &mut Project,
-        round_name: String,
-        token_amount: u64,
-        ctx: &mut TxContext
-    ) {
-        check_is_setter(admin_storage, ctx);
-
-        launchpad_vesting::sub_vesting(project, round_name, token_amount, ctx);
+        assert!(vector::contains(&admin_storage.setters, &tx_context::sender(ctx)), ESetterIsNotSetted);
     }
 }

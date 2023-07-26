@@ -1,14 +1,15 @@
 [package]
 name = "yousui"
-version = "0.0.4"
-published-at = "0xfa5729076fb51c973782698a06afe037db5d2ba165795d05efc26a028676bb7a"
+version = "0.0.1"
+published-at = "0x8b7c312bb0ea2f54e83e44da406181e2fc0a7beac201efe6aedb07e40aa938da"
 
 [dependencies]
-Sui = { git = "https://github.com/MystenLabs/sui.git", subdir = "crates/sui-framework/packages/sui-framework", rev = "testnet" }
-YOUSUINFTS = { git = "https://github.com/splabs-info/yousui_free_minting_sc.git", rev = "master" }
+Sui = { git = "https://github.com/MystenLabs/sui.git", subdir = "crates/sui-framework/packages/sui-framework", rev = "mainnet" }
+YOUSUINFTS = { local = "../yousui_free_minting_sc" }
 
 [addresses]
-#yousui =  "0x0"
-yousui =  "0xf0c3f973bbec66e055b79d0bf1ce11d09a7e474fe34cca21e27790d3f7cd4907"
-yousuinfts = "0x4a0de1e2b482da120f7d680e68df66fcb587b56cb89ba81b3322ccede49ed523"
+yousui =  "0x0"
 sui =  "0x2"
+
+#mainnet
+yousuinfts = "0x6a29b3b80de2bd69ee94b2a2f11e5bf2e3614d1cc08f1cb16eefa290bc859cb0"
