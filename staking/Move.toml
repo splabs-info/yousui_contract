@@ -1,7 +1,7 @@
 [package]
 name = "yousui_staking"
 version = "0.0.1"
-published-at = "0xc0c1f158988af91b89f134d4fbf3fc22bf3c37969e5ed841585261f822b5757d"
+published-at = "0x901ffb2579cf41deb4ac498a7b0654382f3db138e91f2a208d35380a7c7d7a15"
 
 [dependencies]
 Sui = { git = "https://github.com/MystenLabs/sui.git", subdir = "crates/sui-framework/packages/sui-framework", rev = "mainnet" }

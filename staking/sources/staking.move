@@ -368,11 +368,24 @@ module yousui_staking::staking {
         assert!(staking_package.is_open, EStakingPackageNotOpen);
         assert!(stake_amount >= staking_package.min_stake_amount, EStakingAmountExceedMin);
 
-        //handle access
+        // //handle access
+        // if (vec_map::contains(&staking_storage.access_list, &sender)) {
+        //     let action_access_list = vec_map::get_mut(&mut staking_storage.access_list, &sender);
+        //     let action_access_time = vec_map::get_mut(action_access_list, &utf8(ACTION_STAKE));
+        //     *action_access_time = now;
+        // } else {
+        //     let action_access_time = vec_map::empty<String, u64>();
+        //     vec_map::insert(&mut action_access_time, utf8(ACTION_STAKE), now);
+        //     vec_map::insert(&mut staking_storage.access_list, sender, action_access_time);
+        // };
         if (vec_map::contains(&staking_storage.access_list, &sender)) {
             let action_access_list = vec_map::get_mut(&mut staking_storage.access_list, &sender);
-            let action_access_time = vec_map::get_mut(action_access_list, &utf8(ACTION_STAKE));
-            *action_access_time = now;
+            if (vec_map::contains(action_access_list, &utf8(ACTION_STAKE))) {
+                let action_access_time = vec_map::get_mut(action_access_list, &utf8(ACTION_STAKE));
+                *action_access_time = now;
+            } else {
+                vec_map::insert(action_access_list, utf8(ACTION_STAKE), now);
+            }
         } else {
             let action_access_time = vec_map::empty<String, u64>();
             vec_map::insert(&mut action_access_time, utf8(ACTION_STAKE), now);
@@ -457,14 +470,21 @@ module yousui_staking::staking {
         *token_accumulate_stake = *token_accumulate_stake - pos.stake_amount;
 
         //handle access
-        if (vec_map::contains(&staking_storage.access_list, &sender)) {
-            let action_access_list = vec_map::get_mut(&mut staking_storage.access_list, &sender);
+        // if (vec_map::contains(&staking_storage.access_list, &sender)) {
+        //     let action_access_list = vec_map::get_mut(&mut staking_storage.access_list, &sender);
+        //     let action_access_time = vec_map::get_mut(action_access_list, &utf8(ACTION_UNSTAKE));
+        //     *action_access_time = now;
+        // } else {
+        //     let action_access_time = vec_map::empty<String, u64>();
+        //     vec_map::insert(&mut action_access_time, utf8(ACTION_UNSTAKE), now);
+        //     vec_map::insert(&mut staking_storage.access_list, sender, action_access_time);
+        // };
+        let action_access_list = vec_map::get_mut(&mut staking_storage.access_list, &sender);
+        if (vec_map::contains(action_access_list, &utf8(ACTION_UNSTAKE))) {
             let action_access_time = vec_map::get_mut(action_access_list, &utf8(ACTION_UNSTAKE));
-            *action_access_time = now;
+            *action_access_time = now;   
         } else {
-            let action_access_time = vec_map::empty<String, u64>();
-            vec_map::insert(&mut action_access_time, utf8(ACTION_UNSTAKE), now);
-            vec_map::insert(&mut staking_storage.access_list, sender, action_access_time);
+            vec_map::insert(action_access_list, utf8(ACTION_UNSTAKE), now);
         };
 
         //handle update latest claim pos
