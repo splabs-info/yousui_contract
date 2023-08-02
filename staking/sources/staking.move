@@ -332,6 +332,18 @@ module yousui_staking::staking {
         object_bag::borrow_mut(&mut staking_storage.other, utf8(VAULT))
     }
 
+    public fun get_staking_point_by_address(
+        staking_storage: &StakingStorage,
+        investor: address,
+        token_type: String
+    ): u64 {
+        if (vec_map::contains(&staking_storage.invest_list, &investor)) {     
+            let all_accumulate_stake = vec_map::get(&staking_storage.invest_list, &investor);
+            let token_accumulate_stake = vec_map::get(all_accumulate_stake, &token_type);
+            *token_accumulate_stake
+        } else 0
+    }
+
     entry public fun stake<T>(
         clock: &Clock,
         staking_storage: &mut StakingStorage,

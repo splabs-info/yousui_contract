@@ -1,11 +1,13 @@
 [package]
 name = "yousui_staking"
 version = "0.0.1"
-published-at = "0x901ffb2579cf41deb4ac498a7b0654382f3db138e91f2a208d35380a7c7d7a15"
+published-at = "0x387ab17c23670608847c75ff17b828a1da8b2ee072ad59275fd6699a82722a37"
 
 [dependencies]
 Sui = { git = "https://github.com/MystenLabs/sui.git", subdir = "crates/sui-framework/packages/sui-framework", rev = "mainnet" }
 
 [addresses]
-yousui_staking =  "0x0"
+#yousui_staking =  "0x0"
 sui =  "0x2"
+
+yousui_staking =  "0x0f0cdf14bcac51ef9f468600807f4224c97bc21e4480b34a9cfd51eeae63b297"
