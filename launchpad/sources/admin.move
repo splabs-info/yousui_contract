@@ -16,10 +16,13 @@ module yousui::admin {
     use yousui::policy_purchase;
     use yousui::policy_yousui_nft;
     use yousui::policy_whitelist;
+    use yousui::policy_staking_tier;
     use yousui::vault;
     use yousui::service_vesting;
     use yousui::service_affiliate;
     use yousui::service_preregister;
+    use yousui::service_refund;
+    use yousui::utils;
     use yousui::launchpad::{Self, LaunchpadStorage};
 
     const ESetterIsNotSetted: u64 = 100+0;
@@ -160,6 +163,23 @@ module yousui::admin {
 
 //------------------- RULE ---------------------
 
+    entry public fun add_rule_staking_tier<T>(
+        admin_storage: &AdminStorage,
+        launchpad: &mut LaunchpadStorage,
+        project_name: String,
+        round_name: String,
+        min_stake: u64,
+        ctx: &mut TxContext
+    ) {
+        check_is_setter(admin_storage, ctx);
+
+        let project = launchpad::borrow_mut_dynamic_object_field<Project>(launchpad, project_name);
+        let round = project::borrow_mut_dynamic_object_field(project, round_name);
+        let policy = ido::get_mut_policy(round);
+        let token_type = utils::get_full_type<T>();
+        policy_staking_tier::add(policy, min_stake, token_type);
+    }
+
     entry public fun add_rule_yousui_nft(
         admin_storage: &AdminStorage,
         launchpad: &mut LaunchpadStorage,
@@ -292,6 +312,45 @@ module yousui::admin {
     }
 
 //------------------- RULE ---------------------
+
+    entry public fun add_service_refund(
+        admin_storage: &AdminStorage,
+        launchpad: &mut LaunchpadStorage,
+        project_name: String,
+        round_name: String,
+        start_refund_time: u64,
+        refund_range_time: u64,
+        ctx: &mut TxContext
+    ) {
+        check_is_setter(admin_storage, ctx);
+
+        let project = launchpad::borrow_mut_dynamic_object_field<Project>(launchpad, project_name);
+        let round = project::borrow_mut_dynamic_object_field(project, round_name);
+        let service = ido::get_mut_service(round);
+        
+        service_refund::add(
+            service,
+            start_refund_time,
+            refund_range_time,
+            ctx
+        );
+    }
+
+    entry public fun remove_service_refund(
+        admin_storage: &AdminStorage,
+        launchpad: &mut LaunchpadStorage,
+        project_name: String,
+        round_name: String,
+        ctx: &mut TxContext
+    ) {
+        check_is_setter(admin_storage, ctx);
+
+        let project = launchpad::borrow_mut_dynamic_object_field<Project>(launchpad, project_name);
+        let round = project::borrow_mut_dynamic_object_field(project, round_name);
+        let service = ido::get_mut_service(round);
+
+        service_refund::remove(service);
+    }
 
     entry public fun add_service_vesting(
         admin_storage: &AdminStorage,
@@ -711,6 +770,55 @@ module yousui::admin {
         let project = launchpad::borrow_mut_dynamic_object_field<Project>(launchpad, project_name);
         let round = project::borrow_mut_dynamic_object_field(project, round_name);
         ido::airdrop_vesting(clock, round, arr_user_address, arr_token_amount, ctx)
+    }
+
+// --- launchpad ---
+
+    public entry fun set_launchpad_image(
+        admin_storage: &AdminStorage,
+        launchpad: &mut LaunchpadStorage,
+        new_image: String,
+        ctx: &mut TxContext
+    ) {
+        check_is_setter(admin_storage, ctx);
+
+        launchpad::set_image(launchpad, new_image)
+    }
+
+// --- refund ---
+
+    public entry fun set_start_refund_time(
+        admin_storage: &AdminStorage,
+        launchpad: &mut LaunchpadStorage,
+        project_name: String,
+        round_name: String,
+        start_refund_time: u64,
+        ctx: &mut TxContext
+    ) {
+        check_is_setter(admin_storage, ctx);
+
+        let project = launchpad::borrow_mut_dynamic_object_field<Project>(launchpad, project_name);
+        let round = project::borrow_mut_dynamic_object_field(project, round_name);
+
+        let service = ido::get_mut_service(round);
+        service_refund::set_start_refund_time(service, start_refund_time);
+    }
+
+    public entry fun set_refund_range_time(
+        admin_storage: &AdminStorage,
+        launchpad: &mut LaunchpadStorage,
+        project_name: String,
+        round_name: String,
+        range_time: u64,
+        ctx: &mut TxContext
+    ) {
+        check_is_setter(admin_storage, ctx);
+
+        let project = launchpad::borrow_mut_dynamic_object_field<Project>(launchpad, project_name);
+        let round = project::borrow_mut_dynamic_object_field(project, round_name);
+        
+        let service = ido::get_mut_service(round);
+        service_refund::set_refund_range_time(service, range_time);
     }
 
 //------------------------------------------------------------------------ End Admin actions ------------------------------------------------------------------------

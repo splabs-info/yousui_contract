@@ -15,6 +15,7 @@ module yousui::policy {
     friend yousui::policy_purchase;
     friend yousui::policy_yousui_nft;
     friend yousui::policy_whitelist;
+    friend yousui::policy_staking_tier;
     friend yousui::admin;
 
     const EPolicyNotSatisfied: u64 = 400+0;

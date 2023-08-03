@@ -1,11 +1,12 @@
 [package]
 name = "yousui"
 version = "0.0.1"
-published-at = "0x8b7c312bb0ea2f54e83e44da406181e2fc0a7beac201efe6aedb07e40aa938da"
+published-at = "0x07aafdcfb070750ca58263f4325a149b58a779db029caf9714310b246696550f"
 
 [dependencies]
 Sui = { git = "https://github.com/MystenLabs/sui.git", subdir = "crates/sui-framework/packages/sui-framework", rev = "mainnet" }
 YOUSUINFTS = { local = "../yousui_free_minting_sc" }
+yousui_staking = { local = "../staking" }
 
 [addresses]
 yousui =  "0x0"
@@ -13,3 +14,4 @@ sui =  "0x2"
 
 #mainnet
 yousuinfts = "0x6a29b3b80de2bd69ee94b2a2f11e5bf2e3614d1cc08f1cb16eefa290bc859cb0"
+yousui_staking = "0x0f0cdf14bcac51ef9f468600807f4224c97bc21e4480b34a9cfd51eeae63b297"

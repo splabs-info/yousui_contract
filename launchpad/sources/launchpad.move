@@ -16,6 +16,7 @@ module yousui::launchpad {
     use yousui::project::{Self, Project};
     use yousui::ido::{Self, Round};
     use yousuinfts::nft::{YOUSUINFT};
+    use yousui_staking::staking::{StakingStorage};
 
     friend yousui::admin;
 
@@ -39,9 +40,9 @@ module yousui::launchpad {
         transfer::share_object(LaunchpadStorage {
            id: object::new(ctx),
            name: utf8(b"YouSUI Launchpad"),
-           image: utf8(b"https://kol-sale.yousui.io/images/background/water-seek.jpg"),
+           image: utf8(b"https://yousui.io/images/staking/water-seek.jpg"),
            website: utf8(b"https://yousui.io"),
-           link: utf8(b"https://kol-sale.yousui.io"),
+           link: utf8(b"https://yousui.io/ido-launchpad"),
            description: utf8(b"YouSUI is an All-In-One platform that runs on the Sui Blockchain and includes DEX, Launchpad, NFT Marketplace and Bridge."),
            projects: vec_set::empty(),
            other: object_bag::new(ctx)
@@ -116,6 +117,36 @@ module yousui::launchpad {
         ido::purchase_yousui_og_holder<TOKEN, PAYMENT>(clock, round, token_amount, paid, hold_nft, ctx);
     }
 
+    entry public fun purchase_yousui_tier45_holder<TOKEN, PAYMENT>(
+        clock: &Clock,
+        launchpad: &mut LaunchpadStorage,
+        project_name: String,
+        round_name: String,
+        token_amount: u64,
+        paid: vector<Coin<PAYMENT>>,
+        hold_nft: &YOUSUINFT,
+        ctx: &mut TxContext
+    ) {
+        let project = borrow_mut_dynamic_object_field<Project>(launchpad, project_name);
+        let round = project::borrow_mut_dynamic_object_field<Round>(project, round_name);
+        ido::purchase_yousui_tier45_holder<TOKEN, PAYMENT>(clock, round, token_amount, paid, hold_nft, ctx);
+    }
+
+    entry public fun purchase_nor_staking<TOKEN, PAYMENT>(
+        clock: &Clock,
+        launchpad: &mut LaunchpadStorage,
+        project_name: String,
+        round_name: String,
+        token_amount: u64,
+        paid: vector<Coin<PAYMENT>>,
+        staking_storage: &StakingStorage,
+        ctx: &mut TxContext
+    ) {
+        let project = borrow_mut_dynamic_object_field<Project>(launchpad, project_name);
+        let round = project::borrow_mut_dynamic_object_field<Round>(project, round_name);
+        ido::purchase_nor_staking<TOKEN, PAYMENT>(clock, round, token_amount, paid, staking_storage, ctx);
+    }
+
     entry public fun claim_vesting<TOKEN>(
         clock: &Clock,
         launchpad: &mut LaunchpadStorage,
@@ -141,6 +172,18 @@ module yousui::launchpad {
         ido::claim_refund_preregister<PAYMENT>(clock, round, ctx)
     }
 
+    entry public fun claim_refund<PAYMENT>(
+        clock: &Clock,
+        launchpad: &mut LaunchpadStorage,
+        project_name: String,
+        round_name: String,
+        ctx: &mut TxContext
+    ) {
+        let project = borrow_mut_dynamic_object_field<Project>(launchpad, project_name);
+        let round = project::borrow_mut_dynamic_object_field<Round>(project, round_name);
+        ido::claim_refund<PAYMENT>(clock, round, ctx)
+    }
+
     public(friend) fun borrow_mut_dynamic_object_field<T: key + store>(launchpad: &mut LaunchpadStorage, project_name: String): &mut T {
         dof::borrow_mut(&mut launchpad.id, project_name)
     }
@@ -158,4 +201,10 @@ module yousui::launchpad {
         dof::add(&mut launchpad.id, field_name, filed_value);
     }
 
+    public(friend) fun set_image(
+        launchpad: &mut LaunchpadStorage,
+        new_image: String,
+    ) {
+        launchpad.image = new_image;
+    }
 }

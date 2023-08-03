@@ -16,6 +16,7 @@ module yousui::service {
     friend yousui::service_vesting;
     friend yousui::service_affiliate;
     friend yousui::service_preregister;
+    friend yousui::service_refund;
 
     const EFeatureAlreadySet: u64 = 600+0;
 

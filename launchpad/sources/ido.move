@@ -25,13 +25,16 @@ module yousui::ido {
     use yousui::policy_purchase;
     use yousui::policy_yousui_nft;
     use yousui::policy_whitelist;
+    use yousui::policy_staking_tier;
     use yousui::service_vesting;
     use yousui::service_affiliate;
     use yousui::service_preregister;
+    use yousui::service_refund;
     use yousui::certificate;
     use yousui::utils;
 
     use yousuinfts::nft::{YOUSUINFT};
+    use yousui_staking::staking::{StakingStorage};
 
     friend yousui::admin;
     
@@ -65,6 +68,8 @@ module yousui::ido {
     const PURCHASE_NOR_TYPE: u8 = 1;
     const PURCHASE_REF_TYPE: u8 = 2;
     const PURCHASE_HOLD_TYPE: u8 = 3;
+    const PURCHASE_HOLD_TIER_TYPE: u8 = 4;
+    const PURCHASE_STAKING_TYPE: u8 = 5;
 
 
     struct Round has key, store {
@@ -272,6 +277,7 @@ module yousui::ido {
         policy_purchase::check(policy, &mut request, token_amount);
         policy_whitelist::check(policy, &mut request, ctx);
         policy_yousui_nft::pass(policy, &mut request);
+        policy_staking_tier::pass(policy, &mut request);
         policy::confirm_request(policy, request);
 
         // update state
@@ -311,7 +317,7 @@ module yousui::ido {
         let payment_amount = cal_payment_amount(&round.payments, payment_method_type, token_amount, round.token_decimal);
 
         buy_validate(round, timestamp);
-        assert!(vec_set::contains(&round.purchase_type, &PURCHASE_NOR_TYPE), EPurchaseFunctionInvalid);
+        assert!(vec_set::contains(&round.purchase_type, &PURCHASE_REF_TYPE), EPurchaseFunctionInvalid);
 
         // handle receipt
         let receipt =  Receipt {
@@ -377,7 +383,7 @@ module yousui::ido {
         let payment_amount = cal_payment_amount(&round.payments, payment_method_type, token_amount, round.token_decimal);
 
         buy_validate(round, timestamp);
-        assert!(vec_set::contains(&round.purchase_type, &PURCHASE_NOR_TYPE), EPurchaseFunctionInvalid);
+        assert!(vec_set::contains(&round.purchase_type, &PURCHASE_HOLD_TYPE), EPurchaseFunctionInvalid);
 
         // handle receipt
         let receipt =  Receipt {
@@ -403,8 +409,9 @@ module yousui::ido {
         let policy = object_bag::borrow_mut(&mut round.other, utf8(POLICY));
         let request = policy::new_request(object::uid_to_inner(&round.id));
         policy_purchase::check(policy, &mut request, token_amount);
+        policy_whitelist::check(policy, &mut request, ctx);
         policy_yousui_nft::check(policy, &mut request, hold_nft);
-        policy_whitelist::pass(policy, &mut request);
+        policy_staking_tier::pass(policy, &mut request);
         policy::confirm_request(policy, request);
 
         // update state
@@ -428,12 +435,147 @@ module yousui::ido {
         handle_cert(round, timestamp, vesting_id, ctx);
     }
 
-    // nft_purchase: &YOUSUINFT
+    public fun purchase_yousui_tier45_holder<TOKEN, PAYMENT>(
+        clock: &Clock,
+        round: &mut Round,
+        token_amount: u64,
+        paid: vector<Coin<PAYMENT>>,
+        hold_nft: &YOUSUINFT,
+        ctx: &mut TxContext
+    ) {
+
+        let timestamp = clock::timestamp_ms(clock);
+        let sender = tx_context::sender(ctx);
+        let payment_method_type = utils::get_full_type<PAYMENT>();
+        let payment_amount = cal_payment_amount(&round.payments, payment_method_type, token_amount, round.token_decimal);
+
+        buy_validate(round, timestamp);
+        assert!(vec_set::contains(&round.purchase_type, &PURCHASE_HOLD_TIER_TYPE), EPurchaseFunctionInvalid);
+
+        // handle receipt
+        let receipt =  Receipt {
+                payment: *vec_map::get(&round.payments, &payment_method_type),
+                payment_amount,
+                token_amount,
+            };
+        if (!df::exists_<address>(&round.id, sender)) {
+            let receipt_instance = vector::empty<Receipt>();
+            vector::push_back(&mut receipt_instance, receipt);
+            df::add<address, Invest>(&mut round.id, sender, Invest {
+                investments: receipt_instance,
+                total_accumulate_token: token_amount,
+                final_accumulate_token: option::none(),
+            });
+        } else {
+            let bm_invest_by_user = df::borrow_mut<address, Invest>(&mut round.id, sender);
+            bm_invest_by_user.total_accumulate_token = bm_invest_by_user.total_accumulate_token + token_amount;
+            vector::push_back(&mut bm_invest_by_user.investments, receipt);
+        };
+
+        // check policy
+        let policy = object_bag::borrow_mut(&mut round.other, utf8(POLICY));
+        let request = policy::new_request(object::uid_to_inner(&round.id));
+        policy_purchase::check(policy, &mut request, token_amount);
+        policy_whitelist::check(policy, &mut request, ctx);
+        policy_yousui_nft::check_tier(policy, &mut request, hold_nft);
+        policy_staking_tier::pass(policy, &mut request);
+        policy::confirm_request(policy, request);
+
+        // update state
+        update_state_purchase<PAYMENT>(round, token_amount, payment_amount, paid, ctx);
+
+        // check service
+        let service = object_bag::borrow_mut(&mut round.other, utf8(SERVICE));
+        let vesting_id = service_vesting::get_id(service);
+
+        service_preregister::validate_purchase(service, round.total_sold, round.total_supply);
+        service_vesting::execute_add_vesting(service, token_amount, sender);
+
+        emit(Purchase {
+            round_id: object::uid_to_inner(&round.id),
+            token_amount,
+            payment_amount,
+            payment_method_type,
+            sender: tx_context::sender(ctx)
+        });
+
+        handle_cert(round, timestamp, vesting_id, ctx);
+    }
+
+    public fun purchase_nor_staking<TOKEN, PAYMENT>(
+        clock: &Clock,
+        round: &mut Round,
+        token_amount: u64,
+        paid: vector<Coin<PAYMENT>>,
+        staking_storage: &StakingStorage,
+        ctx: &mut TxContext
+    ) {
+
+        let timestamp = clock::timestamp_ms(clock);
+        let sender = tx_context::sender(ctx);
+        let payment_method_type = utils::get_full_type<PAYMENT>();
+        let payment_amount = cal_payment_amount(&round.payments, payment_method_type, token_amount, round.token_decimal);
+
+        buy_validate(round, timestamp);
+
+        assert!(vec_set::contains(&round.purchase_type, &PURCHASE_STAKING_TYPE), EPurchaseFunctionInvalid);
+
+        // handle receipt
+        let receipt =  Receipt {
+                payment: *vec_map::get(&round.payments, &payment_method_type),
+                payment_amount,
+                token_amount,
+            };
+        if (!df::exists_<address>(&round.id, sender)) {
+            let receipt_instance = vector::empty<Receipt>();
+            vector::push_back(&mut receipt_instance, receipt);
+            df::add<address, Invest>(&mut round.id, sender, Invest {
+                investments: receipt_instance,
+                total_accumulate_token: token_amount,
+                final_accumulate_token: option::none(),
+            });
+        } else {
+            let bm_invest_by_user = df::borrow_mut<address, Invest>(&mut round.id, sender);
+            bm_invest_by_user.total_accumulate_token = bm_invest_by_user.total_accumulate_token + token_amount;
+            vector::push_back(&mut bm_invest_by_user.investments, receipt);
+        };
+
+        // check policy
+        let policy = object_bag::borrow_mut(&mut round.other, utf8(POLICY));
+        let request = policy::new_request(object::uid_to_inner(&round.id));
+        policy_purchase::check(policy, &mut request, token_amount);
+        policy_whitelist::check(policy, &mut request, ctx);
+        policy_yousui_nft::pass(policy, &mut request);
+        policy_staking_tier::check(policy, &mut request, staking_storage, sender);
+        policy::confirm_request(policy, request);
+
+        // update state
+        update_state_purchase<PAYMENT>(round, token_amount, payment_amount, paid, ctx);
+
+        // check service
+        let service = object_bag::borrow_mut(&mut round.other, utf8(SERVICE));
+        let vesting_id = service_vesting::get_id(service);
+
+
+        service_preregister::validate_purchase(service, round.total_sold, round.total_supply);
+        service_vesting::execute_add_vesting(service, token_amount, sender);
+
+        emit(Purchase {
+            round_id: object::uid_to_inner(&round.id),
+            token_amount,
+            payment_amount,
+            payment_method_type,
+            sender: tx_context::sender(ctx)
+        });
+
+        handle_cert(round, timestamp, vesting_id, ctx);
+    }
 
 ///------------------------------------------------------------------------------------------------------
 
 
     public fun claim_vesting<TOKEN>(clock: &Clock, round: &mut Round, period_id_list: vector<u64>, ctx: &mut TxContext) {
+        let timestamp = clock::timestamp_ms(clock);
         let sender = tx_context::sender(ctx);
         let service = object_bag::borrow_mut(&mut round.other, utf8(SERVICE));
         let total_claim = service_vesting::update_withdraw(clock, service, period_id_list, sender);
@@ -445,6 +587,8 @@ module yousui::ido {
         // UPDATE
         assert!(total_claim > 0, EVestingClaimNothing);
         assert!(service_vesting::check_is_open_claim_vesting(service), EClaimVestingNotOpen);
+        assert!(timestamp > round.end_at, ENotEndRoundYet);
+        service_refund::insert_refund_address(service, sender);
         
         let round_balance = object_bag::borrow_mut<String, Vaults>(&mut round.other, utf8(VAULT));
         vault::withdraw<TOKEN>(round_balance, total_claim, sender, ctx);
@@ -498,6 +642,37 @@ module yousui::ido {
         }
     }
 
+
+    // Just handle for FCFS, not handle for pre-register yet.
+    public fun claim_refund<PAYMENT>(clock: &Clock, round: &mut Round, ctx: &mut TxContext) {
+        let timestamp = clock::timestamp_ms(clock);
+        let sender = tx_context::sender(ctx);
+
+        let payment_method_type = utils::get_full_type<PAYMENT>();
+        assert!(vec_map::contains(&round.payments, &payment_method_type), EPaymentMethodInvalid);
+
+        let token_decimal = round.token_decimal;
+
+        assert!(df::exists_(&round.id, sender), ESenderNotParticipant);
+
+        assert!(timestamp > round.end_at, ENotEndRoundYet);
+
+        let service = object_bag::borrow_mut(&mut round.other, utf8(SERVICE));
+
+        service_refund::check_valid_refund(service, clock);
+        service_refund::insert_refund_address(service, sender);
+        
+        let investor = df::borrow_mut<address, Invest>(&mut round.id, sender);
+
+        assert!(option::is_none(&investor.final_accumulate_token), ERefundClaimed);
+
+        let refund_payment_amount = cal_payment_amount(&round.payments, payment_method_type, investor.total_accumulate_token, token_decimal);
+        service_vesting::execute_sub_vesting(service, investor.total_accumulate_token, sender);
+        let round_balance = object_bag::borrow_mut<String, Vaults>(&mut round.other, utf8(VAULT));
+        vault::withdraw<PAYMENT>(round_balance, refund_payment_amount, sender, ctx);
+
+        option::fill(&mut investor.final_accumulate_token, 0);
+    }
 
 ///------------------------------------------------------------------------------------------------------
 

@@ -40,7 +40,7 @@ module yousui::certificate {
         let values = vector[
             utf8(b"YouSUI x {project.name} <> {event_name} <> Certificate"),
             utf8(b"{project.link_url}"),
-            utf8(b"{project.image_url}"),
+            utf8(b"https://files.yousui.io/IDO/releap.png"),
             utf8(b"{description}"),
             utf8(b"{project.website}"),
             utf8(b"YouSUI Creator")

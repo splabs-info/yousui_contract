@@ -32,6 +32,18 @@ module yousui::policy_yousui_nft {
         }
     }
 
+    public(friend) fun check_tier(
+        policy: &mut Policy,
+        request: &mut Request,
+        hold_nft: &YOUSUINFT,
+    ) {
+        let rule_key = utils::get_key_by_struct<Rule>();
+        if (vec_set::contains(policy::rules(policy), &rule_key)) {
+            assert!(check_yousui_nft_tier(hold_nft), EInvalidNftOGType);
+            policy::add_receipt<Rule>(request);
+        }
+    }
+
     public(friend) fun pass(
         policy: &mut Policy,
         request: &mut Request,
@@ -45,5 +57,10 @@ module yousui::policy_yousui_nft {
     fun check_yousui_nft(hold_nft: &YOUSUINFT): bool {
         let nft_type = nft::type(hold_nft);
         nft_type == b"og"
-    }    
+    }
+
+    fun check_yousui_nft_tier(hold_nft: &YOUSUINFT): bool {
+        let nft_type = nft::type(hold_nft);
+        nft_type == b"4" || nft_type == b"5"
+    }
 }
