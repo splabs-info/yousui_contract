@@ -1,7 +1,7 @@
 [package]
 name = "yousui"
 version = "0.0.1"
-published-at = "0x07aafdcfb070750ca58263f4325a149b58a779db029caf9714310b246696550f"
+published-at = "0x801c60fb4ee2f30dec7dddd1ad3e5afe76d1d2ea6697291227a2f56d91ee1782"
 
 [dependencies]
 Sui = { git = "https://github.com/MystenLabs/sui.git", subdir = "crates/sui-framework/packages/sui-framework", rev = "mainnet" }

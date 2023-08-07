@@ -140,6 +140,15 @@ module yousui::ido {
         sender: address
     }
 
+    struct PurchaseEvent has copy, drop {
+        project_name: String,
+        round_name: String,
+        token_amount: u64,
+        payment_amount: u64,
+        payment_method_type: String,
+        sender: address
+    }
+
 
     // UPDATE
     struct AdminVesting has copy, drop {
@@ -154,6 +163,22 @@ module yousui::ido {
         round_id: ID,
         period_id_list: vector<u64>,
         total_claim: u64,
+        sender: address
+    }
+
+    struct ClaimVestingEvent has copy, drop {
+        project_name: String,
+        round_name: String,
+        period_id_list: vector<u64>,
+        total_claim: u64,
+        sender: address
+    }
+
+    struct ClaimRefundEvent has copy, drop {
+        project_name: String,
+        round_name: String,
+        total_refund: u64,
+        refund_token_type: String,
         sender: address
     }
 
@@ -291,8 +316,9 @@ module yousui::ido {
         service_preregister::validate_purchase(service, round.total_sold, round.total_supply);
         service_vesting::execute_add_vesting(service, token_amount, sender);
 
-        emit(Purchase {
-            round_id: object::uid_to_inner(&round.id),
+        emit(PurchaseEvent {
+            project_name: project::get_project_name(&round.project),
+            round_name: round.name,
             token_amount,
             payment_amount,
             payment_method_type,
@@ -357,8 +383,9 @@ module yousui::ido {
         service_preregister::validate_purchase(service, round.total_sold, round.total_supply);
         service_vesting::execute_add_vesting(service, token_amount, sender);
 
-        emit(Purchase {
-            round_id: object::uid_to_inner(&round.id),
+        emit(PurchaseEvent {
+            project_name: project::get_project_name(&round.project),
+            round_name: round.name,
             token_amount,
             payment_amount,
             payment_method_type,
@@ -424,8 +451,9 @@ module yousui::ido {
         service_preregister::validate_purchase(service, round.total_sold, round.total_supply);
         service_vesting::execute_add_vesting(service, token_amount, sender);
 
-        emit(Purchase {
-            round_id: object::uid_to_inner(&round.id),
+        emit(PurchaseEvent {
+            project_name: project::get_project_name(&round.project),
+            round_name: round.name,
             token_amount,
             payment_amount,
             payment_method_type,
@@ -476,7 +504,7 @@ module yousui::ido {
         let policy = object_bag::borrow_mut(&mut round.other, utf8(POLICY));
         let request = policy::new_request(object::uid_to_inner(&round.id));
         policy_purchase::check(policy, &mut request, token_amount);
-        policy_whitelist::check(policy, &mut request, ctx);
+        policy_whitelist::pass(policy, &mut request);
         policy_yousui_nft::check_tier(policy, &mut request, hold_nft);
         policy_staking_tier::pass(policy, &mut request);
         policy::confirm_request(policy, request);
@@ -491,8 +519,9 @@ module yousui::ido {
         service_preregister::validate_purchase(service, round.total_sold, round.total_supply);
         service_vesting::execute_add_vesting(service, token_amount, sender);
 
-        emit(Purchase {
-            round_id: object::uid_to_inner(&round.id),
+        emit(PurchaseEvent {
+            project_name: project::get_project_name(&round.project),
+            round_name: round.name,
             token_amount,
             payment_amount,
             payment_method_type,
@@ -544,7 +573,7 @@ module yousui::ido {
         let policy = object_bag::borrow_mut(&mut round.other, utf8(POLICY));
         let request = policy::new_request(object::uid_to_inner(&round.id));
         policy_purchase::check(policy, &mut request, token_amount);
-        policy_whitelist::check(policy, &mut request, ctx);
+        policy_whitelist::pass(policy, &mut request);
         policy_yousui_nft::pass(policy, &mut request);
         policy_staking_tier::check(policy, &mut request, staking_storage, sender);
         policy::confirm_request(policy, request);
@@ -560,8 +589,9 @@ module yousui::ido {
         service_preregister::validate_purchase(service, round.total_sold, round.total_supply);
         service_vesting::execute_add_vesting(service, token_amount, sender);
 
-        emit(Purchase {
-            round_id: object::uid_to_inner(&round.id),
+        emit(PurchaseEvent {
+            project_name: project::get_project_name(&round.project),
+            round_name: round.name,
             token_amount,
             payment_amount,
             payment_method_type,
@@ -593,8 +623,9 @@ module yousui::ido {
         let round_balance = object_bag::borrow_mut<String, Vaults>(&mut round.other, utf8(VAULT));
         vault::withdraw<TOKEN>(round_balance, total_claim, sender, ctx);
 
-        emit(ClaimVesting {
-            round_id: object::uid_to_inner(&round.id),
+        emit(ClaimVestingEvent {
+            project_name: project::get_project_name(&round.project),
+            round_name: round.name,
             period_id_list,
             total_claim,
             sender
@@ -669,9 +700,17 @@ module yousui::ido {
         let refund_payment_amount = cal_payment_amount(&round.payments, payment_method_type, investor.total_accumulate_token, token_decimal);
         service_vesting::execute_sub_vesting(service, investor.total_accumulate_token, sender);
         let round_balance = object_bag::borrow_mut<String, Vaults>(&mut round.other, utf8(VAULT));
-        vault::withdraw<PAYMENT>(round_balance, refund_payment_amount, sender, ctx);
+        vault::withdraw<PAYMENT>(round_balance, copy refund_payment_amount, sender, ctx);
 
         option::fill(&mut investor.final_accumulate_token, 0);
+
+        emit(ClaimRefundEvent {
+            project_name: project::get_project_name(&round.project),
+            round_name: round.name,
+            total_refund: refund_payment_amount,
+            refund_token_type: payment_method_type,
+            sender
+        })
     }
 
 ///------------------------------------------------------------------------------------------------------
