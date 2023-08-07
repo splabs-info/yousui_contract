@@ -5,6 +5,7 @@ module yousui::admin {
     use sui::coin::{Coin};
     use sui::clock::{Clock};
     use sui::vec_map;
+    use sui::vec_set;
     use sui::transfer;
 
     use std::string::{String};
@@ -657,6 +658,27 @@ module yousui::admin {
         let project = launchpad::borrow_mut_dynamic_object_field<Project>(launchpad, project_name);
         let bm_round = project::borrow_mut_dynamic_object_field(project, round_name);
         ido::set_push_total_sold(bm_round, amount);
+    }
+
+    public entry fun set_arr_purchase_type(
+        admin_storage: &AdminStorage,
+        launchpad: &mut LaunchpadStorage,
+        project_name: String,
+        round_name: String,
+        purchase_type: vector<u8>,
+        ctx: &mut TxContext
+    ) {
+        check_is_setter(admin_storage, ctx);
+
+        let project = launchpad::borrow_mut_dynamic_object_field<Project>(launchpad, project_name);
+        let bm_round = project::borrow_mut_dynamic_object_field(project, round_name);
+
+        let arr_purchase_type = vec_set::empty<u8>();
+        while (!vector::is_empty(&purchase_type)) {
+            vec_set::insert(&mut arr_purchase_type, vector::pop_back(&mut purchase_type));
+        };
+
+        ido::set_arr_purchase_type(bm_round, arr_purchase_type);
     }
 
     public entry fun fix(

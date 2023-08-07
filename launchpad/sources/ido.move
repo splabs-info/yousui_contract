@@ -772,6 +772,10 @@ module yousui::ido {
         payment.ratio_per_token = new_ratio_per_token;
     }
 
+    public(friend) fun set_arr_purchase_type(bm_round: &mut Round, arr_purchase_type: VecSet<u8>) {
+        bm_round.purchase_type = arr_purchase_type;
+    }
+
     public(friend) fun add_payment<PAYMENT>(bm_round: &mut Round, ratio_per_token: u64, ratio_decimal: u8, payment_decimal: u8) {
         assert!(payment_decimal <= 18, ETokenDecimalInvalid);
 
