@@ -921,4 +921,16 @@ module yousui::ido {
             handle_cert_with_user(round, timestamp, vesting_id, user_address, ctx);
         };
     }
+
+    public(friend) fun migrate_vesting_schedule(
+        round: &mut Round,
+    ) {
+        let participants = round.participants;
+        let service = object_bag::borrow_mut(&mut round.other, utf8(SERVICE));
+        let arr_investor_dump = vec_set::into_keys(participants);
+        while (!vector::is_empty(&arr_investor_dump)) {
+            let user_address = vector::pop_back(&mut arr_investor_dump);
+            service_vesting::execute_migrate_vesting(service, user_address);
+        };
+    }
 }

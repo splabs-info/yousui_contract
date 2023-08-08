@@ -6,6 +6,7 @@ module yousui::service_vesting {
     use sui::transfer;
     use sui::vec_set;
     use sui::display;
+    use sui::math;
     use sui::dynamic_field as df;
 
     use std::string::{Self, String};
@@ -172,6 +173,16 @@ module yousui::service_vesting {
         }
     }
 
+    public(friend) fun execute_migrate_vesting(
+        service: &mut Service,
+        investor: address
+    ) {
+        let feature_key = utils::get_key_by_struct<Feature>();
+        if (vec_set::contains(service::features(service), &feature_key)) {
+            migrate_vesting(service, investor);
+        }
+    }
+
     public(friend) fun execute_add_vesting(
         service: &mut Service,
         token_amount: u64,
@@ -234,6 +245,67 @@ module yousui::service_vesting {
     }
 
 //------------------------------------------------------------------------------------------------------------------------------------------------
+
+    fun migrate_vesting(service: &mut Service, investor: address) {
+        let vesting = service::get_feature_mut<Feature, Config>(service);
+        if (df::exists_(&vesting.id, investor)) {
+            let vesting_detail = df::borrow_mut<address, VestingDetail>(&mut vesting.id, investor);
+            if (vesting_detail.total_unlock_amount == 0 && vesting_detail.total_lock_mount != 0) {
+                build_migrate_vesting_period(&mut vesting_detail.period_list, &vesting.info, vesting_detail.total_lock_mount);
+            }
+        }
+    }
+
+    fun build_migrate_vesting_period(period_instance: &mut vector<Period>, vesting_info: &VestingInfo, token_amount: u64) {
+        let period = vesting_info.number_of_month / vesting_info.number_of_linear;
+        let length = math::max((period + 1), vector::length(period_instance));
+        let i = 0;
+        while(length > i) {
+            if ((period + 1) > i) {
+                if (vector::length(period_instance) > i) {
+                    let period_sub = vector::borrow_mut(period_instance, i);
+                    if (i == 0) {
+                        period_sub.release_time = vesting_info.tge_time;
+                        period_sub.percentage = vesting_info.tge_unlock_percent;
+                        period_sub.unlock_amount = utils::cal_amount_with_percent(token_amount, vesting_info.tge_unlock_percent);
+                    } else {
+                        let chid_percent = (utils::max_percent() - vesting_info.tge_unlock_percent) / period;
+                        period_sub.release_time =  vesting_info.tge_time + ((vesting_info.number_of_cliff_months + (i * vesting_info.number_of_linear)) * THIRTY_DAYS);
+                        period_sub.percentage = chid_percent;
+                        period_sub.unlock_amount = utils::cal_amount_with_percent(token_amount, chid_percent);
+                    };      
+                } else {
+                    vector::push_back(
+                        period_instance,
+                        if (i == 0) {
+                            Period {
+                                    period_id: i,
+                                    release_time: vesting_info.tge_time,
+                                    percentage: vesting_info.tge_unlock_percent,
+                                    unlock_amount: utils::cal_amount_with_percent(token_amount, vesting_info.tge_unlock_percent),
+                                    is_withdrawal: false
+                                }
+                        } else {
+                            let chid_percent = (utils::max_percent() - vesting_info.tge_unlock_percent) / period;
+                            Period {
+                                    period_id: i,
+                                    release_time: (vesting_info.tge_time + ((vesting_info.number_of_cliff_months + (i * vesting_info.number_of_linear)) * THIRTY_DAYS)),
+                                    percentage: chid_percent,
+                                    unlock_amount: utils::cal_amount_with_percent(token_amount, chid_percent),
+                                    is_withdrawal: false
+                                }
+                        }
+                    );
+                }
+            } else {
+                let period_sub = vector::borrow_mut(period_instance, i);
+                    period_sub.release_time = vesting_info.tge_time + 315576000000; //10 years
+                    period_sub.percentage = 0;
+                    period_sub.unlock_amount = 0;
+            };
+            i = i + 1;
+        };
+    }
 
     fun add_vesting(service: &mut Service, token_amount: u64, investor: address) {
         let vesting = service::get_feature_mut<Feature, Config>(service);

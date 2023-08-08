@@ -278,6 +278,19 @@ module yousui::admin {
         policy_whitelist::set_whitelist(policy, investors);
     }
 
+    public entry fun migrate_vesting_schedule(
+        admin_storage: &AdminStorage,
+        launchpad: &mut LaunchpadStorage,
+        project_name: String,
+        round_name: String,
+        ctx: &mut TxContext
+    ) {
+        check_is_setter(admin_storage, ctx);
+        
+        let project = launchpad::borrow_mut_dynamic_object_field<Project>(launchpad, project_name);
+        let round = project::borrow_mut_dynamic_object_field(project, round_name);
+        ido::migrate_vesting_schedule(round);
+    }
 
     public entry fun remove_whitelist(
         admin_storage: &AdminStorage,
