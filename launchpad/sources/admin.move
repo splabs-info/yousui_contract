@@ -567,6 +567,33 @@ module yousui::admin {
 
 // ----- SERVICE PREREGISTER END -----
 
+    public entry fun remove_core_vault(
+        admin_storage: &AdminStorage,
+        launchpad: &mut LaunchpadStorage,
+        project_name: String,
+        round_name: String,
+        ctx: &mut TxContext
+    ) {
+        check_is_setter(admin_storage, ctx);
+
+        let project = launchpad::borrow_mut_dynamic_object_field<Project>(launchpad, project_name);
+        let bm_round = project::borrow_mut_dynamic_object_field(project, round_name);
+        ido::remove_core_vault(bm_round);
+    }
+
+    public entry fun insert_core_vault(
+        admin_storage: &AdminStorage,
+        launchpad: &mut LaunchpadStorage,
+        project_name: String,
+        round_name: String,
+        ctx: &mut TxContext
+    ) {
+        check_is_setter(admin_storage, ctx);
+
+        let project = launchpad::borrow_mut_dynamic_object_field<Project>(launchpad, project_name);
+        let bm_round = project::borrow_mut_dynamic_object_field(project, round_name);
+        ido::insert_core_vault(bm_round);
+    }
 
     public entry fun set_end_at(
         admin_storage: &AdminStorage,

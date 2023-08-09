@@ -739,6 +739,16 @@ module yousui::ido {
 
 ///------------------------------------------------------------------------------------------------------
 
+    public(friend) fun remove_core_vault(bm_round: &mut Round) {
+        vec_map::remove(&mut bm_round.core, &utf8(VAULT));
+    }
+
+    public(friend) fun insert_core_vault(bm_round: &mut Round) {
+        let vault_ins = object_bag::borrow(&bm_round.other, utf8(VAULT));
+        let id = *object::uid_as_inner(vault::uid(vault_ins));
+        vec_map::insert(&mut bm_round.core, utf8(VAULT), id);
+    }
+
     public(friend) fun set_end_at(bm_round: &mut Round, new_end_at: u64) {
         assert!(bm_round.start_at < new_end_at, EEndTimeInvalid);
         bm_round.end_at = new_end_at;
