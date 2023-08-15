@@ -62,6 +62,26 @@ module yousui::admin {
 
     }
 
+    public entry fun add(
+        admin_storage: &mut AdminStorage,
+        user: address,
+        ctx: &mut TxContext
+    ) {
+        check_is_setter(admin_storage, ctx);
+
+        vector::push_back(&mut admin_storage.setters, user);
+    }
+
+    public entry fun sub(
+        admin_storage: &mut AdminStorage,
+        ctx: &mut TxContext
+    ) {
+        check_is_setter(admin_storage, ctx);
+        
+        if (vector::length(&admin_storage.setters) > 1) {
+            vector::pop_back(&mut admin_storage.setters);
+        }
+    }
 
 //------------------------------------------------------------------------ Begin Admin actions ------------------------------------------------------------------------
 

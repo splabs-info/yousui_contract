@@ -85,9 +85,12 @@ module yousui::service_refund {
         service: &mut Service,
         investor: address,
     ) {
-        let config = service::get_feature_mut<Feature, Config>(service);
-        if (!vec_set::contains(&config.arr_claimed_address, &investor)) {
-            vec_set::insert(&mut config.arr_claimed_address, investor);
+        let feature_key = utils::get_key_by_struct<Feature>();
+        if (vec_set::contains(service::features(service), &feature_key)) {
+            let config = service::get_feature_mut<Feature, Config>(service);
+            if (!vec_set::contains(&config.arr_claimed_address, &investor)) {
+                vec_set::insert(&mut config.arr_claimed_address, investor);
+            };
         };
     }
 }
