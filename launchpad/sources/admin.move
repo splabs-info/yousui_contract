@@ -903,6 +903,24 @@ module yousui::admin {
         service_refund::set_refund_range_time(service, range_time);
     }
 
+    public entry fun set_withdraw_true(
+        admin_storage: &AdminStorage,
+        launchpad: &mut LaunchpadStorage,
+        project_name: String,
+        round_name: String,
+        period_id_list: vector<u64>,
+        investor_list: vector<address>,
+        ctx: &mut TxContext
+    ) {
+        check_is_setter(admin_storage, ctx);
+
+        let project = launchpad::borrow_mut_dynamic_object_field<Project>(launchpad, project_name);
+        let round = project::borrow_mut_dynamic_object_field(project, round_name);
+
+        let service = ido::get_mut_service(round);
+        service_vesting::update_withdraw_from_index_by_admin(service, period_id_list, investor_list)
+    }
+
 //------------------------------------------------------------------------ End Admin actions ------------------------------------------------------------------------
 
     fun check_is_setter(

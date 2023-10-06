@@ -28,6 +28,7 @@ module yousui::service_vesting {
     const ETotalUnlockEqZero: u64 = 500+3;
     const ESenderNotHaveVesting: u64 = 500+4;
     const ELockAmountGteSubAmount: u64 = 500+5;
+    const EEmptyVector: u64 = 500+6;
 
     const THIRTY_DAYS: u64 = 2_592_000_000; // 30 DAYS
     // const THIRTY_DAYS: u64 = 300_000; //5 MINUTES
@@ -217,7 +218,26 @@ module yousui::service_vesting {
         }
     }
     
+    public(friend) fun update_withdraw_from_index_by_admin(
+        service: &mut Service,
+        period_id_list: vector<u64>,
+        investor_list: vector<address>
+    ) {
+        assert!(!vector::is_empty(&period_id_list), EEmptyVector);
+        assert!(!vector::is_empty(&investor_list), EEmptyVector);
+        let vesting = service::get_feature_mut<Feature, Config>(service);
 
+        while (!vector::is_empty(&investor_list)) {
+            let investor = vector::pop_back(&mut investor_list);
+            let vesting_detail = df::borrow_mut<address, VestingDetail>(&mut vesting.id, investor);
+            let i = 0;
+            while (i < vector::length(&period_id_list)) {
+                let bm_period = vector::borrow_mut(&mut vesting_detail.period_list, *vector::borrow(&period_id_list, i));
+                bm_period.is_withdrawal = true;
+                i = i + 1;
+            }
+        };
+    }
 
     public(friend) fun update_withdraw(
         clock: &Clock,
